@@ -566,16 +566,195 @@ class RoomScanViewController: UIViewController {
     roomCaptureView.captureSession.stop()
     isScanning = false
     
-    // Wait a moment for the session to process final data, then use latest captured room
+    // Wait a moment for the session to process final data, then show preview
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
       if let room = self.latestCapturedRoom {
-        print("DEBUG: Using latest captured room data from scanning")
-        self.processCapturedRoom(room)
+        print("DEBUG: Using latest captured room data - showing preview")
+        self.showPreview(for: room)
       } else {
         print("DEBUG: No room data available - scan may not be complete")
         self.dismiss(animated: true) {
           self.onScanComplete?(false, "Scan incomplete - please scan more of the room", nil)
         }
+      }
+    }
+  }
+  
+  private func showPreview(for room: CapturedRoom) {
+    print("DEBUG: 🎉 Showing preview for captured room!")
+    print("DEBUG: Room has \(room.objects.count) objects")
+    
+    // Update UI for preview mode
+    view.subviews.forEach { $0.removeFromSuperview() }
+    view.backgroundColor = .black
+    
+    // Add preview label
+    let previewLabel = UILabel()
+    previewLabel.text = "Room Scan Complete"
+    previewLabel.textColor = .white
+    previewLabel.font = UIFont.boldSystemFont(ofSize: 24)
+    previewLabel.textAlignment = .center
+    view.addSubview(previewLabel)
+    previewLabel.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      previewLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      previewLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60)
+    ])
+    
+    // Add object count label
+    let objectsLabel = UILabel()
+    objectsLabel.text = "Found \(room.objects.count) objects"
+    objectsLabel.textColor = .lightGray
+    objectsLabel.font = UIFont.systemFont(ofSize: 18)
+    objectsLabel.textAlignment = .center
+    view.addSubview(objectsLabel)
+    objectsLabel.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      objectsLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      objectsLabel.topAnchor.constraint(equalTo: previewLabel.bottomAnchor, constant: 8)
+    ])
+    
+    // Add objects list
+    let objectsListLabel = UILabel()
+    objectsListLabel.numberOfLines = 0
+    objectsListLabel.textColor = .white
+    objectsListLabel.font = UIFont.systemFont(ofSize: 14)
+    objectsListLabel.textAlignment = .center
+    
+    var objectsList = ""
+    for (index, object) in room.objects.enumerated() {
+      let dimensions = object.dimensions
+      let categoryName = getCategoryName(object.category)
+      let confidenceName = getConfidenceName(object.confidence)
+      objectsList += "\(index + 1). \(categoryName) (\(String(format: "%.1f", dimensions.x))×\(String(format: "%.1f", dimensions.y))×\(String(format: "%.1f", dimensions.z))m) - \(confidenceName)\n"
+    }
+    
+    objectsListLabel.text = objectsList.isEmpty ? "No objects detected" : objectsList
+    view.addSubview(objectsListLabel)
+    objectsListLabel.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      objectsListLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      objectsListLabel.topAnchor.constraint(equalTo: objectsLabel.bottomAnchor, constant: 20),
+      objectsListLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+      objectsListLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+    ])
+    
+    // Add Cancel button
+    let cancelButton = UIButton(type: .system)
+    cancelButton.setTitle("Cancel", for: .normal)
+    cancelButton.setTitleColor(.white, for: .normal)
+    cancelButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+    cancelButton.layer.cornerRadius = 8
+    cancelButton.addTarget(self, action: #selector(cancelPreview), for: .touchUpInside)
+    
+    view.addSubview(cancelButton)
+    cancelButton.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      cancelButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+      cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      cancelButton.widthAnchor.constraint(equalToConstant: 100),
+      cancelButton.heightAnchor.constraint(equalToConstant: 44)
+    ])
+    
+    // Add Save button
+    let saveButton = UIButton(type: .system)
+    saveButton.setTitle("Save", for: .normal)
+    saveButton.setTitleColor(.white, for: .normal)
+    saveButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+    saveButton.layer.cornerRadius = 8
+    saveButton.addTarget(self, action: #selector(saveToFile), for: .touchUpInside)
+    
+    view.addSubview(saveButton)
+    saveButton.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      saveButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+      saveButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+      saveButton.widthAnchor.constraint(equalToConstant: 100),
+      saveButton.heightAnchor.constraint(equalToConstant: 44)
+    ])
+    
+    // Store the room for saving
+    self.latestCapturedRoom = room
+  }
+  
+  @objc private func cancelPreview() {
+    print("DEBUG: Cancelling preview...")
+    dismiss(animated: true) {
+      self.onScanComplete?(false, "Scan cancelled during preview", nil)
+    }
+  }
+  
+  @objc private func saveToFile() {
+    guard let room = latestCapturedRoom else {
+      print("DEBUG: No room data to save")
+      return
+    }
+    
+    print("DEBUG: Showing file save dialog...")
+    showFileSaveDialog(for: room)
+  }
+  
+  private func showFileSaveDialog(for room: CapturedRoom) {
+    let timestamp = Int(Date().timeIntervalSince1970)
+    let defaultFileName = "room_scan_\(timestamp).usdz"
+    
+    // Create a temporary USDZ file first
+    let tempDirectory = FileManager.default.temporaryDirectory
+    let tempFileURL = tempDirectory.appendingPathComponent(defaultFileName)
+    
+    do {
+      print("DEBUG: Creating temporary USDZ file...")
+      try room.export(to: tempFileURL)
+      print("DEBUG: ✅ Temporary USDZ file created")
+      
+      // Present document picker for saving
+      if #available(iOS 14.0, *) {
+        let documentPicker = UIDocumentPickerViewController(forExporting: [tempFileURL], asCopy: true)
+        documentPicker.delegate = self
+        documentPicker.modalPresentationStyle = .formSheet
+        
+        present(documentPicker, animated: true) {
+          print("DEBUG: Document picker presented")
+        }
+      } else {
+        // Fallback for iOS 13 - save to default location
+        saveToDefaultLocation(room: room, fileName: defaultFileName)
+      }
+    } catch {
+      print("DEBUG: ❌ Failed to create temporary USDZ file: \(error)")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Failed to prepare file for saving: \(error.localizedDescription)", nil)
+      }
+    }
+  }
+  
+  private func saveToDefaultLocation(room: CapturedRoom, fileName: String) {
+    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let roomScansDirectory = documentsPath.appendingPathComponent("RoomScans")
+    
+    // Create directory if needed
+    if !FileManager.default.fileExists(atPath: roomScansDirectory.path) {
+      do {
+        try FileManager.default.createDirectory(at: roomScansDirectory, withIntermediateDirectories: true, attributes: nil)
+      } catch {
+        print("DEBUG: Failed to create directory: \(error)")
+      }
+    }
+    
+    let fileURL = roomScansDirectory.appendingPathComponent(fileName)
+    
+    do {
+      print("DEBUG: Saving to default location: \(fileURL.path)")
+      try room.export(to: fileURL)
+      print("DEBUG: ✅ USDZ export successful!")
+      
+      dismiss(animated: true) {
+        self.onScanComplete?(true, "Room scan saved successfully! Found \(room.objects.count) objects.", fileURL.path)
+      }
+    } catch {
+      print("DEBUG: ❌ USDZ export failed: \(error)")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Failed to save scan: \(error.localizedDescription)", nil)
       }
     }
   }
@@ -587,14 +766,14 @@ class RoomScanViewController: UIViewController {
 // MARK: - RoomCaptureViewDelegate & RoomCaptureSessionDelegate
 
 @available(iOS 16.0, *)
-extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
+extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDelegate, UIDocumentPickerDelegate {
   
   // MARK: - RoomCaptureViewDelegate Methods
   
   func captureView(_ view: RoomCaptureView, shouldPresent room: CapturedRoom) -> Bool {
     print("DEBUG: 🤔 shouldPresent called - room has \(room.objects.count) objects")
-    // Return true to indicate we want to handle the scan results ourselves
-    return true
+    // Return false to prevent automatic presentation - we'll handle the preview manually
+    return false
   }
   
   func captureView(_ view: RoomCaptureView, didPresent room: CapturedRoom, error: Error?) {
@@ -608,40 +787,8 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
       return
     }
     
-    print("DEBUG: Room captured successfully, exporting to USDZ...")
-    print("DEBUG: Room has \(room.objects.count) objects")
-    
-    // Save to USDZ file
-    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-    let roomScansDirectory = documentsPath.appendingPathComponent("RoomScans")
-    
-    // Create directory if needed
-    if !FileManager.default.fileExists(atPath: roomScansDirectory.path) {
-      do {
-        try FileManager.default.createDirectory(at: roomScansDirectory, withIntermediateDirectories: true, attributes: nil)
-      } catch {
-        print("DEBUG: Failed to create directory: \(error)")
-      }
-    }
-    
-    let timestamp = Int(Date().timeIntervalSince1970)
-    let fileName = "room_scan_\(timestamp).usdz"
-    let fileURL = roomScansDirectory.appendingPathComponent(fileName)
-    
-    do {
-      print("DEBUG: Exporting to: \(fileURL.path)")
-      try room.export(to: fileURL)
-      print("DEBUG: ✅ USDZ export successful!")
-      
-      dismiss(animated: true) {
-        self.onScanComplete?(true, "Room scan saved successfully!", fileURL.path)
-      }
-    } catch {
-      print("DEBUG: ❌ USDZ export failed: \(error)")
-      dismiss(animated: true) {
-        self.onScanComplete?(false, "Failed to save scan: \(error.localizedDescription)", nil)
-      }
-    }
+    // This shouldn't be called since shouldPresent returns false
+    print("DEBUG: Unexpected didPresent call")
   }
   
   // MARK: - RoomCaptureSessionDelegate Methods
@@ -789,6 +936,30 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
   
   func captureSession(_ session: RoomCaptureSession, didStartWith configuration: RoomCaptureSession.Configuration) {
     print("DEBUG: 🚀 Room capture session started with configuration")
+  }
+  
+  // MARK: - UIDocumentPickerDelegate Methods
+  
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    print("DEBUG: 📁 Document picker completed with URLs: \(urls)")
+    
+    if let savedURL = urls.first {
+      print("DEBUG: ✅ File saved to: \(savedURL.path)")
+      dismiss(animated: true) {
+        self.onScanComplete?(true, "Room scan saved successfully to your chosen location!", savedURL.path)
+      }
+    } else {
+      print("DEBUG: ❌ No URL returned from document picker")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Save operation failed - no location selected", nil)
+      }
+    }
+  }
+  
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    print("DEBUG: 📁 Document picker was cancelled")
+    // Don't dismiss the preview - let user try again or cancel manually
+    controller.dismiss(animated: true)
   }
 }
 #endif

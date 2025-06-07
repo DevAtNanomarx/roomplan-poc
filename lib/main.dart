@@ -36,11 +36,14 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
   bool _isLoading = true;
   Map<String, dynamic>? _deviceInfo;
   String? _errorMessage;
+  List<Map<String, dynamic>> _savedUSDZFiles = [];
+  bool _isScanning = false;
 
   @override
   void initState() {
     super.initState();
     _checkDeviceCapabilities();
+    _loadSavedUSDZFiles();
   }
 
   Future<void> _checkDeviceCapabilities() async {
@@ -92,6 +95,98 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
           'error': 'Unexpected error: $e',
         };
       });
+    }
+  }
+
+  Future<void> _loadSavedUSDZFiles() async {
+    try {
+      if (Platform.isIOS) {
+        final String result = await platform.invokeMethod('getSavedUSDZFiles');
+        final List<dynamic> files = json.decode(result);
+        setState(() {
+          _savedUSDZFiles = files.cast<Map<String, dynamic>>();
+        });
+      }
+    } catch (e) {
+      print('Error loading USDZ files: $e');
+    }
+  }
+
+  Future<void> _startRoomScan() async {
+    if (_isScanning) return;
+    
+    setState(() {
+      _isScanning = true;
+    });
+
+    try {
+      final result = await platform.invokeMethod('startRoomScan');
+      
+      if (result is Map) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Room scan started'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // If a file was saved, reload the list
+        if (result['filePath'] != null) {
+          await _loadSavedUSDZFiles();
+        }
+      }
+    } on PlatformException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unexpected error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isScanning = false;
+      });
+    }
+  }
+
+  Future<void> _openUSDZFile(String fileName) async {
+    try {
+      await platform.invokeMethod('openUSDZFile', {'fileName': fileName});
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error opening file: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteUSDZFile(String fileName) async {
+    try {
+      await platform.invokeMethod('deleteUSDZFile', {'fileName': fileName});
+      await _loadSavedUSDZFiles(); // Reload the list
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('File deleted: $fileName'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error deleting file: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -372,30 +467,149 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
 
                   const SizedBox(height: 24),
 
-                  // Test Scan Button (only if supported)
-                  if (_deviceInfo?['isSupported'] == true)
+                  // Room Scanning Section
+                  if (_deviceInfo?['isSupported'] == true) ...[
+                    Text(
+                      'Room Scanning',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     ElevatedButton.icon(
-                      onPressed: () async {
-                        try {
-                          await platform.invokeMethod('startRoomScan');
-                        } on PlatformException catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Scan test: ${e.message}'),
-                                backgroundColor: Colors.orange,
-              ),
-                            );
-                          }
-                        }
-                      },
-                      icon: const Icon(Icons.scanner),
-                      label: const Text('Test RoomPlan Scan'),
+                      onPressed: _isScanning ? null : _startRoomScan,
+                      icon: _isScanning 
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.view_in_ar),
+                      label: Text(_isScanning ? 'Scanning...' : 'Start Room Scan'),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         textStyle: const TextStyle(fontSize: 16),
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
                       ),
                     ),
+
+                    const SizedBox(height: 24),
+
+                    // Saved USDZ Files Section
+                    Text(
+                      'Saved Room Scans',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (_savedUSDZFiles.isEmpty)
+                      Card(
+                        color: Colors.grey.shade100,
+                        child: const Padding(
+                          padding: EdgeInsets.all(24.0),
+                          child: Column(
+                            children: [
+                              Icon(Icons.folder_open, size: 48, color: Colors.grey),
+                              SizedBox(height: 8),
+                              Text(
+                                'No room scans saved yet',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Start your first room scan to see it here',
+                                style: TextStyle(fontSize: 14, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _savedUSDZFiles.length,
+                        itemBuilder: (context, index) {
+                          final file = _savedUSDZFiles[index];
+                          final fileName = file['fileName'] as String;
+                          final timestamp = file['timestamp'] as int;
+                          final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+                          final formattedDate = 
+                              '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+
+                          return Card(
+                            child: ListTile(
+                              leading: const Icon(Icons.view_in_ar, color: Colors.blue),
+                              title: Text(fileName),
+                              subtitle: Text('Scanned on $formattedDate'),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (value) async {
+                                  if (value == 'open') {
+                                    await _openUSDZFile(fileName);
+                                  } else if (value == 'delete') {
+                                    // Show confirmation dialog
+                                    final shouldDelete = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('Delete Room Scan'),
+                                        content: Text('Are you sure you want to delete "$fileName"?'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(context).pop(false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () => Navigator.of(context).pop(true),
+                                            child: const Text('Delete'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    
+                                    if (shouldDelete == true) {
+                                      await _deleteUSDZFile(fileName);
+                                    }
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'open',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.open_in_new),
+                                        SizedBox(width: 8),
+                                        Text('View in AR'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete, color: Colors.red),
+                                        SizedBox(width: 8),
+                                        Text('Delete', style: TextStyle(color: Colors.red)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              onTap: () => _openUSDZFile(fileName),
+                            ),
+                          );
+                        },
+                      ),
+
+                    const SizedBox(height: 24),
+                  ],
 
                   const SizedBox(height: 16),
 

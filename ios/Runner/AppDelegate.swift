@@ -9,6 +9,10 @@ import RoomPlan
 import ARKit
 #endif
 
+#if canImport(QuickLook)
+import QuickLook
+#endif
+
 // MARK: - Simple Device Detection
 extension UIDevice {
     var simpleModelName: String {
@@ -262,15 +266,21 @@ class SimpleRoomPlanHandler {
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
   
-  private func handleMethodCall(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    private func handleMethodCall(call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "isRoomPlanSupported":
       checkRoomPlanSupport(result: result)
     case "startRoomScan":
       startRoomScan(result: result)
-      default:
-        result(FlutterMethodNotImplemented)
-      }
+    case "getSavedUSDZFiles":
+      getSavedUSDZFiles(result: result)
+    case "openUSDZFile":
+      openUSDZFile(call: call, result: result)
+    case "deleteUSDZFile":
+      deleteUSDZFile(call: call, result: result)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
   }
   
   private func checkRoomPlanSupport(result: @escaping FlutterResult) {
@@ -288,11 +298,386 @@ class SimpleRoomPlanHandler {
   }
   
   private func startRoomScan(result: @escaping FlutterResult) {
-    let error = SimpleRoomPlanHandler.attemptRoomScan()
-    result(error)
+    // First check if RoomPlan is supported
+    let supportCheck = SimpleRoomPlanHandler.attemptRoomScan()
+    
+    if supportCheck.code != "FEATURE_READY" {
+      result(supportCheck)
+      return
+    }
+    
+    // RoomPlan is supported, start actual scanning
+    print("DEBUG: Starting actual room scan...")
+    
+    guard #available(iOS 16.0, *) else {
+      result(FlutterError(code: "UNSUPPORTED_IOS_VERSION", 
+                        message: "RoomPlan requires iOS 16.0 or later", 
+                        details: nil))
+      return
+    }
+    
+    #if canImport(RoomPlan)
+    DispatchQueue.main.async {
+      let roomScanViewController = RoomScanViewController()
+      roomScanViewController.onScanComplete = { [weak self] success, message, filePath in
+        if success {
+          result(["success": true, "message": message, "filePath": filePath ?? ""])
+        } else {
+          result(FlutterError(code: "SCAN_FAILED", message: message, details: nil))
+        }
+      }
+      
+      if let viewController = UIApplication.shared.keyWindow?.rootViewController {
+        viewController.present(roomScanViewController, animated: true)
+        result(["success": true, "message": "Room scan started", "scanning": true])
+      } else {
+        result(FlutterError(code: "NO_VIEW_CONTROLLER", 
+                          message: "Could not find view controller to present scanner", 
+                          details: nil))
+      }
+    }
+    #else
+    result(FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
+                      message: "RoomPlan framework not available", 
+                      details: nil))
+    #endif
+  }
+  
+  // MARK: - USDZ File Management
+  
+  private func getUSDZDirectory() -> URL {
+    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let usdzDirectory = documentsPath.appendingPathComponent("RoomScans")
+    
+    // Create directory if it doesn't exist
+    if !FileManager.default.fileExists(atPath: usdzDirectory.path) {
+      do {
+        try FileManager.default.createDirectory(at: usdzDirectory, withIntermediateDirectories: true, attributes: nil)
+      } catch {
+        print("Failed to create RoomScans directory: \(error)")
+      }
+    }
+    
+    return usdzDirectory
+  }
+  
+  private func getSavedUSDZFiles(result: @escaping FlutterResult) {
+    let usdzDirectory = getUSDZDirectory()
+    var usdzFiles: [[String: Any]] = []
+    
+    do {
+      let fileURLs = try FileManager.default.contentsOfDirectory(at: usdzDirectory, includingPropertiesForKeys: [.creationDateKey], options: [])
+      
+      for fileURL in fileURLs {
+        if fileURL.pathExtension.lowercased() == "usdz" {
+          do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let creationDate = attributes[.creationDate] as? Date ?? Date()
+            
+            let fileInfo: [String: Any] = [
+              "fileName": fileURL.lastPathComponent,
+              "timestamp": Int(creationDate.timeIntervalSince1970),
+              "filePath": fileURL.path
+            ]
+            usdzFiles.append(fileInfo)
+          } catch {
+            print("Error getting file attributes for \(fileURL.lastPathComponent): \(error)")
+          }
+        }
+      }
+      
+      // Sort by timestamp (newest first)
+      usdzFiles.sort { ($0["timestamp"] as? Int ?? 0) > ($1["timestamp"] as? Int ?? 0) }
+      
+      let jsonData = try JSONSerialization.data(withJSONObject: usdzFiles, options: [])
+      let jsonString = String(data: jsonData, encoding: .utf8) ?? "[]"
+      result(jsonString)
+    } catch {
+      result(FlutterError(code: "FILE_SYSTEM_ERROR", 
+                        message: "Failed to list USDZ files: \(error.localizedDescription)", 
+                        details: nil))
+    }
+  }
+  
+  private func openUSDZFile(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let fileName = args["fileName"] as? String else {
+      result(FlutterError(code: "INVALID_ARGUMENTS", 
+                        message: "Missing required argument: fileName", 
+                        details: nil))
+      return
+    }
+    
+    let usdzDirectory = getUSDZDirectory()
+    let fileURL = usdzDirectory.appendingPathComponent(fileName)
+    
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+      result(FlutterError(code: "FILE_NOT_FOUND", 
+                        message: "USDZ file not found: \(fileName)", 
+                        details: nil))
+      return
+    }
+    
+    DispatchQueue.main.async {
+      #if canImport(QuickLook)
+      if #available(iOS 12.0, *) {
+        let previewVC = ARQuickLookViewController()
+        previewVC.fileURL = fileURL
+        
+        if let viewController = UIApplication.shared.keyWindow?.rootViewController {
+          viewController.present(previewVC, animated: true) {
+            result("USDZ file opened in AR Quick Look")
+          }
+        } else {
+          result(FlutterError(code: "NO_VIEW_CONTROLLER", 
+                            message: "Could not find view controller to present AR Quick Look", 
+                            details: nil))
+        }
+      } else {
+        result(FlutterError(code: "UNSUPPORTED_IOS_VERSION", 
+                          message: "AR Quick Look requires iOS 12.0 or later", 
+                          details: nil))
+      }
+      #else
+      result(FlutterError(code: "QUICKLOOK_NOT_AVAILABLE", 
+                        message: "QuickLook framework not available", 
+                        details: nil))
+      #endif
+    }
+  }
+  
+  private func deleteUSDZFile(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let fileName = args["fileName"] as? String else {
+      result(FlutterError(code: "INVALID_ARGUMENTS", 
+                        message: "Missing required argument: fileName", 
+                        details: nil))
+      return
+    }
+    
+    let usdzDirectory = getUSDZDirectory()
+    let fileURL = usdzDirectory.appendingPathComponent(fileName)
+    
+    do {
+      try FileManager.default.removeItem(at: fileURL)
+      result("USDZ file deleted successfully")
+    } catch {
+      result(FlutterError(code: "FILE_DELETE_ERROR", 
+                        message: "Failed to delete USDZ file: \(error.localizedDescription)", 
+                        details: nil))
+    }
   }
 }
 
+// MARK: - Room Scanning View Controller
 
+#if canImport(RoomPlan)
+@available(iOS 16.0, *)
+class RoomScanViewController: UIViewController {
+  private var roomCaptureView: RoomCaptureView!
+  private var isScanning = false
+  
+  var onScanComplete: ((Bool, String, String?) -> Void)?
+  
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    setupRoomCapture()
+    setupUI()
+  }
+  
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    startScanning()
+  }
+  
+  private func setupRoomCapture() {
+    print("DEBUG: Setting up RoomCaptureView...")
+    
+    // Create RoomCaptureView - it has its own built-in captureSession
+    roomCaptureView = RoomCaptureView(frame: view.bounds)
+    roomCaptureView.delegate = self
+    roomCaptureView.captureSession.delegate = self
+    view.addSubview(roomCaptureView)
+    
+    print("DEBUG: RoomCaptureView setup complete")
+  }
+  
+  private func setupUI() {
+    view.backgroundColor = .black
+    
+    // Add close button
+    let closeButton = UIButton(type: .system)
+    closeButton.setTitle("Cancel", for: .normal)
+    closeButton.setTitleColor(.white, for: .normal)
+    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+    closeButton.layer.cornerRadius = 8
+    closeButton.addTarget(self, action: #selector(cancelScan), for: .touchUpInside)
+    
+    view.addSubview(closeButton)
+    closeButton.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+      closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      closeButton.widthAnchor.constraint(equalToConstant: 80),
+      closeButton.heightAnchor.constraint(equalToConstant: 40)
+    ])
+    
+    // Add done button
+    let doneButton = UIButton(type: .system)
+    doneButton.setTitle("Done", for: .normal)
+    doneButton.setTitleColor(.white, for: .normal)
+    doneButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+    doneButton.layer.cornerRadius = 8
+    doneButton.addTarget(self, action: #selector(finishScan), for: .touchUpInside)
+    
+    view.addSubview(doneButton)
+    doneButton.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      doneButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+      doneButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+      doneButton.widthAnchor.constraint(equalToConstant: 80),
+      doneButton.heightAnchor.constraint(equalToConstant: 40)
+    ])
+  }
+  
+  private func startScanning() {
+    guard !isScanning else { return }
+    
+    print("DEBUG: Starting room capture session...")
+    var config = RoomCaptureSession.Configuration()
+    config.isCoachingEnabled = true
+    
+    roomCaptureView.captureSession.run(configuration: config)
+    isScanning = true
+    
+    print("DEBUG: Room scanning started")
+  }
+  
+  @objc private func cancelScan() {
+    print("DEBUG: Cancelling room scan...")
+    roomCaptureView.captureSession.stop()
+    dismiss(animated: true) {
+      self.onScanComplete?(false, "Scan cancelled by user", nil)
+    }
+  }
+  
+  @objc private func finishScan() {
+    print("DEBUG: Finishing room scan...")
+    roomCaptureView.captureSession.stop()
+    isScanning = false
+    
+    // The delegate method will handle the rest
+  }
+}
 
+// MARK: - RoomCaptureViewDelegate & RoomCaptureSessionDelegate
 
+@available(iOS 16.0, *)
+extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
+  func captureView(_ view: RoomCaptureView, didPresent room: CapturedRoom, error: Error?) {
+    print("DEBUG: Room capture completed!")
+    
+    if let error = error {
+      print("DEBUG: Room capture error: \(error)")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Scan failed: \(error.localizedDescription)", nil)
+      }
+      return
+    }
+    
+    print("DEBUG: Room captured successfully, exporting to USDZ...")
+    
+    // Save to USDZ file
+    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let roomScansDirectory = documentsPath.appendingPathComponent("RoomScans")
+    
+    // Create directory if needed
+    if !FileManager.default.fileExists(atPath: roomScansDirectory.path) {
+      do {
+        try FileManager.default.createDirectory(at: roomScansDirectory, withIntermediateDirectories: true, attributes: nil)
+      } catch {
+        print("DEBUG: Failed to create directory: \(error)")
+      }
+    }
+    
+    let timestamp = Int(Date().timeIntervalSince1970)
+    let fileName = "room_scan_\(timestamp).usdz"
+    let fileURL = roomScansDirectory.appendingPathComponent(fileName)
+    
+    do {
+      print("DEBUG: Exporting to: \(fileURL.path)")
+      try room.export(to: fileURL)
+      print("DEBUG: ✅ USDZ export successful!")
+      
+      dismiss(animated: true) {
+        self.onScanComplete?(true, "Room scan saved successfully!", fileURL.path)
+      }
+    } catch {
+      print("DEBUG: ❌ USDZ export failed: \(error)")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Failed to save scan: \(error.localizedDescription)", nil)
+      }
+    }
+  }
+}
+#endif
+
+// MARK: - AR Quick Look Controller
+
+#if canImport(QuickLook)
+@available(iOS 12.0, *)
+class ARQuickLookViewController: UIViewController {
+  var fileURL: URL?
+  
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    
+    guard let fileURL = fileURL else {
+      dismiss(animated: true)
+      return
+    }
+    
+    let previewController = QLPreviewController()
+    previewController.dataSource = self
+    previewController.delegate = self
+    
+    addChild(previewController)
+    view.addSubview(previewController.view)
+    previewController.view.frame = view.bounds
+    previewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    previewController.didMove(toParent: self)
+    
+    // Add close button
+    let closeButton = UIButton(type: .system)
+    closeButton.setTitle("Close", for: .normal)
+    closeButton.setTitleColor(.white, for: .normal)
+    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+    closeButton.layer.cornerRadius = 8
+    closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
+    
+    view.addSubview(closeButton)
+    closeButton.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+      closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      closeButton.widthAnchor.constraint(equalToConstant: 80),
+      closeButton.heightAnchor.constraint(equalToConstant: 40)
+    ])
+  }
+  
+  @objc private func closeButtonTapped() {
+    dismiss(animated: true)
+  }
+}
+
+@available(iOS 12.0, *)
+extension ARQuickLookViewController: QLPreviewControllerDataSource, QLPreviewControllerDelegate {
+  func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+    return 1
+  }
+  
+  func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+    return fileURL! as QLPreviewItem
+  }
+}
+#endif

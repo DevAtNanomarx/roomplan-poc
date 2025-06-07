@@ -47,5 +47,11 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>This app uses the camera to scan and create 3D models of rooms using RoomPlan.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app may use location services to improve room scanning accuracy.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>This app uses motion sensors to improve room scanning accuracy.</string>
+	<key>ARKitUsageDescription</key>
+	<string>This app uses ARKit and LiDAR for room scanning and 3D model creation.</string>
 </dict>
 </plist>

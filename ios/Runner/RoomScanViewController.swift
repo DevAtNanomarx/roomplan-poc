@@ -1,4 +1,5 @@
 import UIKit
+import Foundation
 #if canImport(RoomPlan)
 import RoomPlan
 import ARKit

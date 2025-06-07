@@ -82,21 +82,52 @@ class RoomPlanHandler {
     private func presentRoomCaptureView() {
         guard let parentController = self.parentController else { return }
         
-        let roomCaptureController = RoomCaptureController()
-        self.roomCaptureController = roomCaptureController
-        
-        let captureView = RoomCaptureView(frame: parentController.view.bounds)
-        captureView.captureController = roomCaptureController
-        captureView.delegate = self
-        self.captureView = captureView
-        
         let scanViewController = RoomScanViewController()
-        scanViewController.captureView = captureView
-        scanViewController.roomPlanHandler = self
+        scanViewController.completionHandler = { [weak self] result in
+            guard let self = self else { return }
+            
+            switch result {
+            case .success(let roomData):
+                self.saveRoomData(roomData) { savedResult in
+                    self.currentResult?(savedResult)
+                    self.currentResult = nil
+                }
+            case .failure(let error):
+                self.currentResult?(FlutterError(code: "SCAN_ERROR", 
+                                               message: "Room scan failed: \(error.localizedDescription)", 
+                                               details: nil))
+                self.currentResult = nil
+            }
+        }
         
         parentController.present(scanViewController, animated: true)
+    }
+    
+    private func saveRoomData(_ roomData: String, completion: @escaping (String) -> Void) {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let fileName = "room_scan_\(timestamp).json"
+        let fileURL = documentsPath.appendingPathComponent(fileName)
         
-        roomCaptureController.startSession()
+        do {
+            try roomData.write(to: fileURL, atomically: true, encoding: .utf8)
+            
+            // Return both the scan data and the file info
+            let responseData = [
+                "scanData": roomData,
+                "fileName": fileName,
+                "filePath": fileURL.path,
+                "timestamp": timestamp
+            ] as [String: Any]
+            
+            let jsonData = try JSONSerialization.data(withJSONObject: responseData, options: [])
+            let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+            completion(jsonString)
+        } catch {
+            completion(FlutterError(code: "SAVE_ERROR", 
+                                  message: "Failed to save room data: \(error.localizedDescription)", 
+                                  details: nil) as! String)
+        }
     }
     
     func finishScan() {

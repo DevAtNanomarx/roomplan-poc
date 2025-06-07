@@ -233,14 +233,8 @@ extension UIDevice {
       let roomPlanBundle = Bundle(identifier: "com.apple.RoomPlan")
       print("DEBUG: RoomPlan bundle: \(roomPlanBundle?.bundlePath ?? "nil")")
       
-      // Check if we can access RoomPlan classes directly
-      #if canImport(RoomPlan)
-      if #available(iOS 16.0, *) {
-        print("DEBUG: Attempting direct RoomCaptureController check...")
-        let directCheck = RoomCaptureController.isSupported
-        print("DEBUG: Direct RoomCaptureController.isSupported: \(directCheck)")
-      }
-      #endif
+             // Note: We cannot reference RoomCaptureController directly due to build environment
+       // Must use runtime reflection only
       
       // Check if RoomPlan framework exists at runtime
       guard classExists || bundlePath != nil || frameworkBundle != nil else {

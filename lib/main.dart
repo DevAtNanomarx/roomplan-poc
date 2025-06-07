@@ -128,9 +128,9 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                   Text(
                     title,
                     style: TextStyle(
@@ -138,7 +138,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                       fontWeight: FontWeight.bold,
                       color: textColor,
                     ),
-                  ),
+                ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -170,17 +170,17 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
               const SizedBox(width: 12),
             ],
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                   Text(
                     title,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                       color: Colors.grey,
-                    ),
-                  ),
+              ),
+            ),
                   const SizedBox(height: 4),
                   Text(
                     value,
@@ -214,9 +214,9 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
       ),
       body: _isLoading
           ? const Center(
-              child: Column(
+        child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+          children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 16),
                   Text('Checking device capabilities...'),
@@ -245,7 +245,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                         ? 'Ready to scan rooms!' 
                         : _deviceInfo?['error']?.toString() ?? 'Not supported',
                     icon: Icons.view_in_ar,
-                  ),
+                      ),
                   const SizedBox(height: 12),
 
                   // LiDAR Support
@@ -275,7 +275,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                     'Device Information',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.bold,
-                    ),
+                      ),
                   ),
                   const SizedBox(height: 16),
 
@@ -309,31 +309,31 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                         color: Colors.blue.shade50,
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                               Row(
                                 children: [
                                   Icon(Icons.bug_report, color: Colors.blue.shade700),
                                   const SizedBox(width: 8),
-                                  Text(
+                          Text(
                                     'Debug Information',
-                                    style: TextStyle(
+                            style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Colors.blue.shade700,
-                                    ),
+                            ),
                                   ),
                                 ],
-                              ),
-                              const SizedBox(height: 8),
+                          ),
+                          const SizedBox(height: 8),
                               Text(
                                 _deviceInfo!['debugInfo'].toString(),
                                 style: const TextStyle(fontSize: 12),
                               ),
                             ],
                           ),
-                        ),
                       ),
+                    ),
                   ],
 
                   // Error Information
@@ -360,8 +360,8 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              _errorMessage!,
+                    Text(
+                      _errorMessage!,
                               style: const TextStyle(fontSize: 14),
                             ),
                           ],
@@ -384,7 +384,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                               SnackBar(
                                 content: Text('Scan test: ${e.message}'),
                                 backgroundColor: Colors.orange,
-                              ),
+              ),
                             );
                           }
                         }
@@ -403,7 +403,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                   Card(
                     color: Colors.amber.shade50,
                     child: Padding(
-                      padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -416,7 +416,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.amber.shade700,
-                                ),
+                ),
                               ),
                             ],
                           ),
@@ -433,9 +433,9 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
+          ],
+        ),
+      ),
     );
   }
 }

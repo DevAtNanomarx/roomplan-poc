@@ -58,9 +58,17 @@ import ARKit
     if #available(iOS 16.0, *) {
       print("DEBUG: Checking RoomPlan support on iOS \(UIDevice.current.systemVersion)")
       
+      // Multiple ways to check RoomPlan availability
+      let bundlePath = Bundle.main.path(forResource: "RoomPlan", ofType: "framework")
+      let classExists = NSClassFromString("RoomCaptureController") != nil
+      let frameworkBundle = Bundle(identifier: "com.apple.RoomPlan")
+      
+      print("DEBUG: Bundle path: \(bundlePath ?? "nil")")
+      print("DEBUG: Class exists: \(classExists)")
+      print("DEBUG: Framework bundle: \(frameworkBundle?.description ?? "nil")")
+      
       // Check if RoomPlan framework exists at runtime
-      guard Bundle.main.path(forResource: "RoomPlan", ofType: "framework") != nil ||
-            NSClassFromString("RoomCaptureController") != nil else {
+      guard classExists || bundlePath != nil || frameworkBundle != nil else {
         print("DEBUG: RoomPlan framework not found in bundle")
         
         let deviceInfo = [

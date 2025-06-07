@@ -1,8 +1,13 @@
 import Flutter
 import UIKit
 import QuickLook
+
+// Try to import RoomPlan and ARKit
 #if canImport(RoomPlan)
 import RoomPlan
+#endif
+
+#if canImport(ARKit)
 import ARKit
 #endif
 
@@ -51,7 +56,36 @@ import ARKit
   
   private func checkRoomPlanSupport(result: @escaping FlutterResult) {
     if #available(iOS 16.0, *) {
-      // Use runtime reflection to avoid compilation issues in build environments without RoomPlan
+      print("DEBUG: Checking RoomPlan support on iOS \(UIDevice.current.systemVersion)")
+      
+      // Check if RoomPlan framework exists at runtime
+      guard Bundle.main.path(forResource: "RoomPlan", ofType: "framework") != nil ||
+            NSClassFromString("RoomCaptureController") != nil else {
+        print("DEBUG: RoomPlan framework not found in bundle")
+        
+        let deviceInfo = [
+          "isSupported": false,
+          "iOSVersion": UIDevice.current.systemVersion,
+          "deviceModel": UIDevice.current.model,
+          "hasLiDAR": false,
+          "frameworkAvailable": false,
+          "error": "RoomPlan framework not available at runtime",
+          "debugInfo": "Framework not found in app bundle. This may indicate the app wasn't built with RoomPlan support or is running on a system without RoomPlan."
+        ] as [String: Any]
+        
+        do {
+          let jsonData = try JSONSerialization.data(withJSONObject: deviceInfo, options: [])
+          let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+          result(jsonString)
+        } catch {
+          result("{\"isSupported\": false, \"error\": \"RoomPlan framework not available\"}")
+        }
+        return
+      }
+      
+      print("DEBUG: RoomPlan class found, checking support")
+      
+      // Use runtime reflection to check RoomPlan support
       guard let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") else {
         let deviceInfo = [
           "isSupported": false,
@@ -59,7 +93,8 @@ import ARKit
           "deviceModel": UIDevice.current.model,
           "hasLiDAR": false,
           "frameworkAvailable": false,
-          "error": "RoomPlan framework not available at runtime"
+          "error": "RoomCaptureController class not found",
+          "debugInfo": "NSClassFromString failed for RoomCaptureController"
         ] as [String: Any]
         
         do {
@@ -74,13 +109,16 @@ import ARKit
       
       // Use KVC to safely call isSupported
       guard let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool else {
+        print("DEBUG: Could not get isSupported property")
+        
         let deviceInfo = [
           "isSupported": false,
           "iOSVersion": UIDevice.current.systemVersion,
           "deviceModel": UIDevice.current.model,
           "hasLiDAR": false,
           "frameworkAvailable": true,
-          "error": "Could not determine RoomPlan support"
+          "error": "Could not determine RoomPlan support",
+          "debugInfo": "KVC failed for isSupported property"
         ] as [String: Any]
         
         do {
@@ -93,12 +131,15 @@ import ARKit
         return
       }
       
+      print("DEBUG: RoomPlan isSupported = \(isSupported)")
+      
       let deviceInfo = [
         "isSupported": isSupported,
         "iOSVersion": UIDevice.current.systemVersion,
         "deviceModel": UIDevice.current.model,
-        "hasLiDAR": isSupported, // RoomCaptureController.isSupported checks for LiDAR
-        "frameworkAvailable": true
+        "hasLiDAR": isSupported,
+        "frameworkAvailable": true,
+        "debugInfo": "Successfully checked RoomPlan support via runtime reflection"
       ] as [String: Any]
       
       do {

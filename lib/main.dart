@@ -772,8 +772,10 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
                           _buildInfoRow('Framework Available', _deviceInfo!['frameworkAvailable'] == true ? '✅ Yes' : '❌ No'),
                           _buildInfoRow('LiDAR Sensor', _deviceInfo!['hasLiDAR'] == true ? '✅ Yes' : '❌ No'),
                           _buildInfoRow('RoomPlan Support', _deviceInfo!['isSupported'] == true ? '✅ Yes' : '❌ No'),
-                          if (_deviceInfo!['error'] != null)
-                            _buildInfoRow('Error', _deviceInfo!['error'], isError: true),
+                                                     if (_deviceInfo!['error'] != null)
+                             _buildInfoRow('Error', _deviceInfo!['error'], isError: true),
+                           if (_deviceInfo!['debugInfo'] != null)
+                             _buildInfoRow('Debug Info', _deviceInfo!['debugInfo']),
                         ],
                       ),
                     ),

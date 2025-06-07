@@ -46,4 +46,14 @@ post_install do |installer|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
     end
   end
+  
+  # Add RoomPlan framework linking to Runner target
+  installer.pods_project.targets.each do |target|
+    if target.name == 'Runner'
+      target.build_configurations.each do |config|
+        config.build_settings['OTHER_LDFLAGS'] ||= []
+        config.build_settings['OTHER_LDFLAGS'] << '-weak_framework RoomPlan'
+      end
+    end
+  end
 end 

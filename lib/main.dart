@@ -2,70 +2,65 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const RoomPlanTestApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class RoomPlanTestApp extends StatelessWidget {
+  const RoomPlanTestApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RoomPlan Flutter POC',
+      title: 'RoomPlan Support Test',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const RoomPlanHomePage(),
+      home: const DeviceCapabilityDashboard(),
     );
   }
 }
 
-class RoomPlanHomePage extends StatefulWidget {
-  const RoomPlanHomePage({super.key});
+class DeviceCapabilityDashboard extends StatefulWidget {
+  const DeviceCapabilityDashboard({super.key});
 
   @override
-  State<RoomPlanHomePage> createState() => _RoomPlanHomePageState();
+  State<DeviceCapabilityDashboard> createState() => _DeviceCapabilityDashboardState();
 }
 
-class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
+class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
   static const platform = MethodChannel('roomplan_flutter_poc/roomplan');
   
-  String _status = 'Ready to scan';
-  bool _isScanning = false;
-  bool _isSupported = false;
-  Map<String, dynamic>? _roomData;
-  String? _errorMessage;
-  List<Map<String, dynamic>> _savedScans = [];
-  List<Map<String, dynamic>> _savedUSDZFiles = [];
-  bool _isLoading = false;
+  bool _isLoading = true;
   Map<String, dynamic>? _deviceInfo;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _checkSupport();
+    _checkDeviceCapabilities();
   }
 
-  Future<void> _checkSupport() async {
+  Future<void> _checkDeviceCapabilities() async {
     setState(() {
-      _status = 'Checking RoomPlan support...';
+      _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
       // Check if we're running on iOS
       if (!Platform.isIOS) {
         setState(() {
-          _isSupported = false;
-          _status = 'RoomPlan not supported';
-          _errorMessage = 'RoomPlan is only available on iOS devices with LiDAR';
+          _isLoading = false;
           _deviceInfo = {
             'isSupported': false,
-            'platform': 'Android/Other',
-            'error': 'RoomPlan only available on iOS'
+            'platform': Platform.operatingSystem.toUpperCase(),
+            'platformVersion': Platform.operatingSystemVersion,
+            'error': 'RoomPlan is only available on iOS devices',
+            'hasLiDAR': false,
+            'frameworkAvailable': false,
           };
         });
         return;
@@ -75,621 +70,131 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
       final Map<String, dynamic> deviceInfo = json.decode(result);
       
       setState(() {
+        _isLoading = false;
         _deviceInfo = deviceInfo;
-        _isSupported = deviceInfo['isSupported'] ?? false;
-        
-        if (_isSupported) {
-          _status = '🎉 RoomPlan Ready! Device has LiDAR support.';
-          _loadSavedScans(); // Only load saved scans if RoomPlan is supported
-        } else {
-          _status = 'RoomPlan not available on this device';
-          if (deviceInfo['error'] != null) {
-            _errorMessage = deviceInfo['error'];
-          } else if (deviceInfo['frameworkAvailable'] == false) {
-            _errorMessage = 'RoomPlan framework not available. This typically happens on iOS Simulator.';
-          } else if (deviceInfo['hasLiDAR'] == false) {
-            _errorMessage = 'This device does not have a LiDAR sensor. RoomPlan requires iPhone 12 Pro+ or iPad Pro with LiDAR.';
-          } else {
-            _errorMessage = 'RoomPlan requirements not met.';
-          }
-        }
       });
-      
-      // Always load USDZ files regardless of RoomPlan support
-      _loadSavedUSDZFiles();
     } on PlatformException catch (e) {
       setState(() {
-        _isSupported = false;
-        _status = 'Error checking support';
-        _errorMessage = 'Failed to check RoomPlan support: ${e.message}';
+        _isLoading = false;
+        _errorMessage = e.message;
         _deviceInfo = {
           'isSupported': false,
-          'error': e.message,
-          'code': e.code
+          'error': 'Platform error: ${e.message}',
+          'errorCode': e.code,
+        };
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString();
+        _deviceInfo = {
+          'isSupported': false,
+          'error': 'Unexpected error: $e',
         };
       });
     }
   }
 
-  Future<void> _loadSavedScans() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Widget _buildStatusCard(String title, bool? status, {String? subtitle, IconData? icon}) {
+    Color cardColor;
+    Color textColor;
+    IconData displayIcon;
 
-    try {
-      final String result = await platform.invokeMethod('getSavedScans');
-      final List<dynamic> scansData = json.decode(result);
-      
-      setState(() {
-        _savedScans = scansData.cast<Map<String, dynamic>>();
-        _isLoading = false;
-      });
-    } on PlatformException catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Failed to load saved scans: ${e.message}';
-      });
+    if (status == null) {
+      cardColor = Colors.grey.shade200;
+      textColor = Colors.grey.shade700;
+      displayIcon = Icons.help_outline;
+    } else if (status) {
+      cardColor = Colors.green.shade100;
+      textColor = Colors.green.shade800;
+      displayIcon = Icons.check_circle;
+    } else {
+      cardColor = Colors.red.shade100;
+      textColor = Colors.red.shade800;
+      displayIcon = Icons.cancel;
     }
-  }
-
-  Future<void> _loadSavedUSDZFiles() async {
-    try {
-      final String result = await platform.invokeMethod('getSavedUSDZFiles');
-      final List<dynamic> usdzData = json.decode(result);
-      
-      setState(() {
-        _savedUSDZFiles = usdzData.cast<Map<String, dynamic>>();
-      });
-    } on PlatformException catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load USDZ files: ${e.message}';
-      });
-    }
-  }
-
-  Future<void> _pickAndUploadUSDZFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['usdz'],
-        allowMultiple: false,
-      );
-
-      if (result != null && result.files.single.path != null) {
-        final String filePath = result.files.single.path!;
-        final String fileName = result.files.single.name;
-        
-        setState(() {
-          _status = 'Uploading USDZ file...';
-        });
-
-        await platform.invokeMethod('uploadUSDZFile', {
-          'filePath': filePath,
-          'fileName': fileName,
-        });
-        
-        setState(() {
-          _status = 'USDZ file uploaded successfully!';
-        });
-        
-        _loadSavedUSDZFiles(); // Reload the list
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$fileName uploaded successfully')),
-        );
-      }
-    } on PlatformException catch (e) {
-      setState(() {
-        _status = 'Upload failed';
-        _errorMessage = 'Failed to upload USDZ file: ${e.message}';
-      });
-    } catch (e) {
-      setState(() {
-        _status = 'Upload failed';
-        _errorMessage = 'Failed to pick file: $e';
-      });
-    }
-  }
-
-  Future<void> _openUSDZFile(String fileName) async {
-    try {
-      await platform.invokeMethod('openUSDZFile', {'fileName': fileName});
-    } on PlatformException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to open USDZ file: ${e.message}')),
-      );
-    }
-  }
-
-  Future<void> _deleteUSDZFile(String fileName) async {
-    try {
-      await platform.invokeMethod('deleteUSDZFile', {'fileName': fileName});
-      _loadSavedUSDZFiles(); // Reload the list
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('USDZ file deleted successfully')),
-      );
-    } on PlatformException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete USDZ file: ${e.message}')),
-      );
-    }
-  }
-
-  Future<void> _startRoomScan() async {
-    if (!_isSupported) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_errorMessage ?? 'RoomPlan not supported')),
-      );
-      return;
-    }
-
-    setState(() {
-      _isScanning = true;
-      _status = 'Attempting to start room scan...';
-      _roomData = null;
-      _errorMessage = null;
-    });
-
-    try {
-      final String result = await platform.invokeMethod('startRoomScan');
-      
-      final Map<String, dynamic> responseData = json.decode(result);
-      final Map<String, dynamic> roomData = json.decode(responseData['scanData']);
-      
-      setState(() {
-        _isScanning = false;
-        _status = 'Scan completed and saved successfully!';
-        _roomData = roomData;
-      });
-      
-      // Show success message with scan details
-      _showScanResults(roomData);
-      
-      // Reload saved scans to include the new one
-      _loadSavedScans();
-    } on PlatformException catch (e) {
-      setState(() {
-        _isScanning = false;
-      });
-      
-      // Handle different error codes appropriately
-      switch (e.code) {
-        case 'FEATURE_NOT_IMPLEMENTED':
-          setState(() {
-            _status = '✅ RoomPlan Confirmed Working!';
-            _errorMessage = null;
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('✅ RoomPlan is fully supported on this device! Scanning implementation is in development.'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          break;
-          
-        case 'DEVICE_NOT_SUPPORTED':
-          setState(() {
-            _status = 'RoomPlan not supported';
-            _errorMessage = 'This device does not have the required LiDAR sensor for RoomPlan.';
-          });
-          break;
-          
-        case 'UNSUPPORTED_IOS_VERSION':
-          setState(() {
-            _status = 'iOS version too old';
-            _errorMessage = 'RoomPlan requires iOS 16.0 or later.';
-          });
-          break;
-          
-        case 'ROOMPLAN_NOT_AVAILABLE':
-          setState(() {
-            _status = 'RoomPlan framework not available';
-            _errorMessage = 'RoomPlan framework is not available on this device.';
-          });
-          break;
-          
-        default:
-          setState(() {
-            _status = 'Scan failed';
-            _errorMessage = 'Error: ${e.message}';
-          });
-          
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: const Text('Scan Failed'),
-                content: Text(e.message ?? 'Unknown error occurred'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('OK'),
-                  ),
-                ],
-              );
-            },
-          );
-          break;
-      }
-    }
-  }
-
-  void _showScanResults(Map<String, dynamic> roomData) {
-    final summary = roomData['summary'] as Map<String, dynamic>?;
-    final dimensions = roomData['dimensions'] as Map<String, dynamic>?;
-    
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('✅ Scan Complete!'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Room Type: ${summary?['roomType'] ?? 'Unknown'}'),
-              Text('Scan Quality: ${summary?['scanQuality'] ?? 'Unknown'}'),
-              if (dimensions != null) ...[
-                const SizedBox(height: 8),
-                Text('Dimensions:'),
-                Text('  Width: ${dimensions['width']?.toStringAsFixed(2) ?? 'N/A'}m'),
-                Text('  Length: ${dimensions['length']?.toStringAsFixed(2) ?? 'N/A'}m'),
-                Text('  Height: ${dimensions['height']?.toStringAsFixed(2) ?? 'N/A'}m'),
-              ],
-              const SizedBox(height: 8),
-              Text('Surfaces detected: ${summary?['totalSurfaces'] ?? 0}'),
-              Text('Objects detected: ${summary?['totalObjects'] ?? 0}'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Great!'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _deleteSavedScan(String fileName) async {
-    try {
-      await platform.invokeMethod('deleteSavedScan', {'fileName': fileName});
-      _loadSavedScans(); // Reload the list
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Scan deleted successfully')),
-      );
-    } on PlatformException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete scan: ${e.message}')),
-      );
-    }
-  }
-
-  void _loadSavedScan(Map<String, dynamic> scanData) {
-    final roomData = json.decode(scanData['scanData']);
-    setState(() {
-      _roomData = roomData;
-      _status = 'Loaded saved scan';
-      _errorMessage = null;
-    });
-  }
-
-  Widget _buildInfoRow(String label, String value, {bool isError = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade700,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                color: isError ? Colors.red.shade800 : Colors.grey.shade800,
-                fontSize: 13,
-                fontWeight: isError ? FontWeight.w500 : FontWeight.normal,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoomDataDisplay() {
-    if (_roomData == null) return const SizedBox.shrink();
 
     return Card(
-      margin: const EdgeInsets.all(16.0),
+      elevation: 4,
+      color: cardColor,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            const Text(
-              'Room Scan Results',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Icon(
+              icon ?? displayIcon,
+              size: 32,
+              color: textColor,
             ),
-            const SizedBox(height: 16),
-            _buildRoomInfo(),
-            const SizedBox(height: 16),
-            _buildSurfacesList(),
-            const SizedBox(height: 16),
-            _buildObjectsList(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRoomInfo() {
-    final confidence = _roomData!['confidence'] ?? 'Unknown';
-    final dimensions = _roomData!['dimensions'] as Map<String, dynamic>?;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Confidence: $confidence', style: const TextStyle(fontSize: 16)),
-        if (dimensions != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Dimensions: ${dimensions['width']?.toStringAsFixed(2) ?? 'N/A'}m × ${dimensions['height']?.toStringAsFixed(2) ?? 'N/A'}m × ${dimensions['length']?.toStringAsFixed(2) ?? 'N/A'}m',
-            style: const TextStyle(fontSize: 16),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildSurfacesList() {
-    final surfaces = _roomData!['surfaces'] as List<dynamic>? ?? [];
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Surfaces (${surfaces.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        ...surfaces.map((surface) => Padding(
-          padding: const EdgeInsets.only(left: 16.0, bottom: 4.0),
-          child: Text(
-            '• ${surface['category'] ?? 'Unknown'} - ${surface['confidence'] ?? 'Unknown'} confidence',
-            style: const TextStyle(fontSize: 14),
-          ),
-        )),
-      ],
-    );
-  }
-
-  Widget _buildObjectsList() {
-    final objects = _roomData!['objects'] as List<dynamic>? ?? [];
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Objects (${objects.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        ...objects.map((object) => Padding(
-          padding: const EdgeInsets.only(left: 16.0, bottom: 4.0),
-          child: Text(
-            '• ${object['category'] ?? 'Unknown'} - ${object['confidence'] ?? 'Unknown'} confidence',
-            style: const TextStyle(fontSize: 14),
-          ),
-        )),
-      ],
-    );
-  }
-
-  Widget _buildSavedScansSection() {
-    return Card(
-      margin: const EdgeInsets.all(16.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Saved Scans',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                if (_isLoading)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: _loadSavedScans,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_savedScans.isEmpty && !_isLoading)
-              const Text('No saved scans found')
-            else
-              ..._savedScans.map((scan) => _buildSavedScanItem(scan)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUSDZFilesSection() {
-    return Card(
-      margin: const EdgeInsets.all(16.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'USDZ Files',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.add, color: Colors.blue),
-                      onPressed: _pickAndUploadUSDZFile,
-                      tooltip: 'Upload USDZ file',
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textColor,
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      onPressed: _loadSavedUSDZFiles,
-                      tooltip: 'Refresh list',
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: textColor.withOpacity(0.8),
+                      ),
                     ),
                   ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Upload and view 3D models in USDZ format',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            if (_savedUSDZFiles.isEmpty)
-              const Text('No USDZ files found. Tap + to upload one.')
-            else
-              ..._savedUSDZFiles.map((file) => _buildUSDZFileItem(file)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildUSDZFileItem(Map<String, dynamic> file) {
-    final fileName = file['fileName'] ?? 'Unknown';
-    final timestamp = file['timestamp'] ?? 0;
-    final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
-    final formattedDate = '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
-
+  Widget _buildInfoCard(String title, String value, {IconData? icon}) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8.0),
-      child: ListTile(
-        leading: const Icon(Icons.view_in_ar_outlined, color: Colors.orange),
-        title: Text(fileName),
-        subtitle: Text(formattedDate),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.open_in_new, color: Colors.green),
-              onPressed: () => _openUSDZFile(fileName),
-              tooltip: 'Open in AR',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () => _showDeleteUSDZConfirmation(file),
-              tooltip: 'Delete file',
+            if (icon != null) ...[
+              Icon(icon, size: 24, color: Colors.blue),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  void _showDeleteUSDZConfirmation(Map<String, dynamic> file) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Delete USDZ File'),
-          content: Text('Are you sure you want to delete "${file['fileName']}"?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _deleteUSDZFile(file['fileName']);
-              },
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSavedScanItem(Map<String, dynamic> scan) {
-    final fileName = scan['fileName'] ?? 'Unknown';
-    final timestamp = scan['timestamp'] ?? 0;
-    final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
-    final formattedDate = '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8.0),
-      child: ListTile(
-        leading: const Icon(Icons.view_in_ar, color: Colors.blue),
-        title: Text('Room Scan'),
-        subtitle: Text(formattedDate),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.visibility, color: Colors.green),
-              onPressed: () => _loadSavedScan(scan),
-              tooltip: 'Load scan',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () => _showDeleteConfirmation(scan),
-              tooltip: 'Delete scan',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(Map<String, dynamic> scan) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Delete Scan'),
-          content: const Text('Are you sure you want to delete this room scan?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _deleteSavedScan(scan['fileName']);
-              },
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -698,176 +203,239 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('RoomPlan Flutter POC'),
+        title: const Text('RoomPlan Device Test'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _checkDeviceCapabilities,
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 32),
-            
-            // Support status
-            Container(
-              margin: const EdgeInsets.all(16.0),
-              padding: const EdgeInsets.all(16.0),
-              decoration: BoxDecoration(
-                color: _isSupported ? Colors.green.shade50 : Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8.0),
-                border: Border.all(
-                  color: _isSupported ? Colors.green : Colors.red,
-                  width: 1.0,
-                ),
-              ),
+      body: _isLoading
+          ? const Center(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _isSupported ? Icons.check_circle : Icons.error,
-                        color: _isSupported ? Colors.green : Colors.red,
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Checking device capabilities...'),
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Main Status Section
+                  Text(
+                    'Device Capabilities',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // RoomPlan Support
+                  _buildStatusCard(
+                    'RoomPlan Support',
+                    _deviceInfo?['isSupported'] as bool?,
+                    subtitle: _deviceInfo?['isSupported'] == true 
+                        ? 'Ready to scan rooms!' 
+                        : _deviceInfo?['error']?.toString() ?? 'Not supported',
+                    icon: Icons.view_in_ar,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // LiDAR Support
+                  _buildStatusCard(
+                    'LiDAR Sensor',
+                    _deviceInfo?['hasLiDAR'] as bool?,
+                    subtitle: _deviceInfo?['hasLiDAR'] == true 
+                        ? 'Depth sensing available' 
+                        : 'Required for RoomPlan',
+                    icon: Icons.radar,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // RoomPlan Framework
+                  _buildStatusCard(
+                    'RoomPlan Framework',
+                    _deviceInfo?['frameworkAvailable'] as bool?,
+                    subtitle: _deviceInfo?['frameworkAvailable'] == true 
+                        ? 'Framework loaded' 
+                        : 'Not available (likely simulator)',
+                    icon: Icons.extension,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Device Information Section
+                  Text(
+                    'Device Information',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (_deviceInfo != null) ...[
+                    _buildInfoCard(
+                      'Platform',
+                      Platform.isIOS ? 'iOS' : Platform.operatingSystem.toUpperCase(),
+                      icon: Platform.isIOS ? Icons.phone_iphone : Icons.android,
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    if (_deviceInfo!['iOSVersion'] != null)
+                      _buildInfoCard(
+                        'iOS Version',
+                        _deviceInfo!['iOSVersion'].toString(),
+                        icon: Icons.info,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _isSupported 
-                            ? 'RoomPlan is supported on this device'
-                            : 'RoomPlan not available',
-                          style: TextStyle(
-                            color: _isSupported ? Colors.green.shade800 : Colors.red.shade800,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
+                    const SizedBox(height: 8),
+
+                    if (_deviceInfo!['deviceModel'] != null)
+                      _buildInfoCard(
+                        'Device Model',
+                        _deviceInfo!['deviceModel'].toString(),
+                        icon: Icons.devices,
+                      ),
+                    const SizedBox(height: 8),
+
+                    // Debug Information (if available)
+                    if (_deviceInfo!['debugInfo'] != null)
+                      Card(
+                        color: Colors.blue.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.bug_report, color: Colors.blue.shade700),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Debug Information',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _deviceInfo!['debugInfo'].toString(),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.refresh, size: 20),
-                        onPressed: _checkSupport,
-                        tooltip: 'Refresh device info',
+                  ],
+
+                  // Error Information
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      color: Colors.red.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.error, color: Colors.red.shade700),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Error Details',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _errorMessage!,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                  if (_deviceInfo != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12.0),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(6.0),
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+
+                  // Test Scan Button (only if supported)
+                  if (_deviceInfo?['isSupported'] == true)
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        try {
+                          await platform.invokeMethod('startRoomScan');
+                        } on PlatformException catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Scan test: ${e.message}'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.scanner),
+                      label: const Text('Test RoomPlan Scan'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        textStyle: const TextStyle(fontSize: 16),
                       ),
+                    ),
+
+                  const SizedBox(height: 16),
+
+                  // Supported Devices Info
+                  Card(
+                    color: Colors.amber.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Device Information',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade800,
-                            ),
+                          Row(
+                            children: [
+                              Icon(Icons.info, color: Colors.amber.shade700),
+                              const SizedBox(width: 8),
+                              Text(
+                                'RoomPlan Requirements',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.amber.shade700,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          if (_deviceInfo!['iOSVersion'] != null)
-                            _buildInfoRow('iOS Version', _deviceInfo!['iOSVersion']),
-                          if (_deviceInfo!['deviceModel'] != null)
-                            _buildInfoRow('Device Model', _deviceInfo!['deviceModel']),
-                          _buildInfoRow('Framework Available', _deviceInfo!['frameworkAvailable'] == true ? '✅ Yes' : '❌ No'),
-                          _buildInfoRow('LiDAR Sensor', _deviceInfo!['hasLiDAR'] == true ? '✅ Yes' : '❌ No'),
-                          _buildInfoRow('RoomPlan Support', _deviceInfo!['isSupported'] == true ? '✅ Yes' : '❌ No'),
-                                                     if (_deviceInfo!['error'] != null)
-                             _buildInfoRow('Error', _deviceInfo!['error'], isError: true),
-                           if (_deviceInfo!['debugInfo'] != null)
-                             _buildInfoRow('Debug Info', _deviceInfo!['debugInfo']),
+                          const SizedBox(height: 12),
+                          const Text('• iOS 16.0 or later'),
+                          const Text('• LiDAR-enabled device:'),
+                          const Text('  - iPhone 12 Pro, 12 Pro Max'),
+                          const Text('  - iPhone 13 Pro, 13 Pro Max'), 
+                          const Text('  - iPhone 14 Pro, 14 Pro Max'),
+                          const Text('  - iPhone 15 Pro, 15 Pro Max'),
+                          const Text('  - iPad Pro (4th gen) 11-inch and later'),
+                          const Text('  - iPad Pro (5th gen) 12.9-inch and later'),
                         ],
                       ),
                     ),
-                  ],
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _errorMessage!,
-                      style: TextStyle(
-                        color: Colors.red.shade700,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
+                  ),
                 ],
               ),
             ),
-
-            // Status display
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                _status,
-                style: const TextStyle(fontSize: 18),
-                textAlign: TextAlign.center,
-              ),
-            ),
-
-            // Action buttons
-            const SizedBox(height: 32),
-            if (_isSupported)
-              ElevatedButton(
-                onPressed: !_isScanning ? _startRoomScan : null,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                ),
-                child: _isScanning
-                    ? const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          SizedBox(width: 12),
-                          Text('Testing...'),
-                        ],
-                      )
-                    : const Text('Test RoomPlan Support'),
-              )
-            else
-              ElevatedButton.icon(
-                onPressed: _pickAndUploadUSDZFile,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.upload_file),
-                label: const Text('Upload USDZ File'),
-              ),
-
-            // Error message
-            if (_errorMessage != null && !_isScanning)
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Container(
-                  padding: const EdgeInsets.all(12.0),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8.0),
-                    border: Border.all(color: Colors.red.shade300),
-                  ),
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Colors.red.shade800),
-                  ),
-                ),
-              ),
-
-            // Room data display
-            _buildRoomDataDisplay(),
-
-            // Saved scans section (only show if RoomPlan is supported)
-            if (_isSupported) _buildSavedScansSection(),
-
-            // USDZ files section (always show)
-            _buildUSDZFilesSection(),
-          ],
-        ),
-      ),
     );
   }
 }

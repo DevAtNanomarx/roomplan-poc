@@ -431,30 +431,20 @@ class SimpleRoomPlanHandler {
     }
     
     DispatchQueue.main.async {
-      #if canImport(QuickLook)
-      if #available(iOS 12.0, *) {
-        let previewVC = ARQuickLookViewController()
-        previewVC.fileURL = fileURL
-        
-        if let viewController = UIApplication.shared.keyWindow?.rootViewController {
-          viewController.present(previewVC, animated: true) {
-            result("USDZ file opened in AR Quick Look")
-          }
-        } else {
-          result(FlutterError(code: "NO_VIEW_CONTROLLER", 
-                            message: "Could not find view controller to present AR Quick Look", 
-                            details: nil))
-        }
+      let savedFileViewController = SavedUSDZViewController()
+      savedFileViewController.fileName = fileName
+      savedFileViewController.fileURL = fileURL
+      savedFileViewController.onClose = {
+        result("USDZ file viewer closed")
+      }
+      
+      if let viewController = UIApplication.shared.keyWindow?.rootViewController {
+        viewController.present(savedFileViewController, animated: true)
       } else {
-        result(FlutterError(code: "UNSUPPORTED_IOS_VERSION", 
-                          message: "AR Quick Look requires iOS 12.0 or later", 
+        result(FlutterError(code: "NO_VIEW_CONTROLLER", 
+                          message: "Could not find view controller to present USDZ viewer", 
                           details: nil))
       }
-      #else
-      result(FlutterError(code: "QUICKLOOK_NOT_AVAILABLE", 
-                        message: "QuickLook framework not available", 
-                        details: nil))
-      #endif
     }
   }
   
@@ -1338,58 +1328,228 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
 }
 #endif
 
-// MARK: - AR Quick Look Controller
+// MARK: - Saved USDZ File Viewer
 
-#if canImport(QuickLook)
-@available(iOS 12.0, *)
-class ARQuickLookViewController: UIViewController {
+class SavedUSDZViewController: UIViewController {
+  var fileName: String?
   var fileURL: URL?
+  var onClose: (() -> Void)?
   
   override func viewDidLoad() {
     super.viewDidLoad()
-    
-    guard let fileURL = fileURL else {
+    setupTabbedInterface()
+  }
+  
+  private func setupTabbedInterface() {
+    guard let fileName = fileName, let fileURL = fileURL else {
       dismiss(animated: true)
       return
     }
     
-    let previewController = QLPreviewController()
-    previewController.dataSource = self
-    previewController.delegate = self
+    view.backgroundColor = UIColor.systemBackground
     
-    addChild(previewController)
-    view.addSubview(previewController.view)
-    previewController.view.frame = view.bounds
-    previewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    previewController.didMove(toParent: self)
+    // Create tab bar controller
+    let tabBarController = UITabBarController()
+    tabBarController.view.translatesAutoresizingMaskIntoConstraints = false
     
-    // Add close button
+    // Create 3D Preview tab
+    let previewViewController = createSaved3DPreviewViewController(for: fileURL)
+    previewViewController.tabBarItem = UITabBarItem(title: "3D Preview", image: UIImage(systemName: "cube"), tag: 0)
+    
+    // Create File Info tab
+    let infoViewController = createSavedFileInfoViewController(fileName: fileName, fileURL: fileURL)
+    infoViewController.tabBarItem = UITabBarItem(title: "File Info", image: UIImage(systemName: "info.circle"), tag: 1)
+    
+    // Set up tab bar controller
+    tabBarController.viewControllers = [previewViewController, infoViewController]
+    tabBarController.selectedIndex = 0 // Start with 3D preview
+    
+    // Add tab bar controller as child
+    addChild(tabBarController)
+    view.addSubview(tabBarController.view)
+    tabBarController.didMove(toParent: self)
+    
+    // Set up constraints for tab bar controller (leave space for close button)
+    NSLayoutConstraint.activate([
+      tabBarController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+      tabBarController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      tabBarController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      tabBarController.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -60)
+    ])
+    
+    // Add Close button
     let closeButton = UIButton(type: .system)
     closeButton.setTitle("Close", for: .normal)
     closeButton.setTitleColor(.white, for: .normal)
-    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+    closeButton.backgroundColor = UIColor.systemBlue
     closeButton.layer.cornerRadius = 8
     closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
     
     view.addSubview(closeButton)
     closeButton.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-      closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-      closeButton.widthAnchor.constraint(equalToConstant: 80),
-      closeButton.heightAnchor.constraint(equalToConstant: 40)
+      closeButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
+      closeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      closeButton.widthAnchor.constraint(equalToConstant: 100),
+      closeButton.heightAnchor.constraint(equalToConstant: 44)
+    ])
+  }
+  
+  private func createSaved3DPreviewViewController(for fileURL: URL) -> UIViewController {
+    let viewController = UIViewController()
+    viewController.view.backgroundColor = UIColor.systemBackground
+    
+    #if canImport(QuickLook)
+    if #available(iOS 12.0, *) {
+      let previewController = QLPreviewController()
+      previewController.dataSource = self
+      
+      // Add preview controller as child
+      viewController.addChild(previewController)
+      viewController.view.addSubview(previewController.view)
+      previewController.view.frame = viewController.view.bounds
+      previewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      previewController.didMove(toParent: viewController)
+    } else {
+      addFallback3DMessage(to: viewController)
+    }
+    #else
+    addFallback3DMessage(to: viewController)
+    #endif
+    
+    return viewController
+  }
+  
+  private func createSavedFileInfoViewController(fileName: String, fileURL: URL) -> UIViewController {
+    let viewController = UIViewController()
+    viewController.view.backgroundColor = UIColor.systemBackground
+    
+    // Create scroll view for file info
+    let scrollView = UIScrollView()
+    scrollView.backgroundColor = UIColor.systemBackground
+    viewController.view.addSubview(scrollView)
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    
+    // Create content view
+    let contentView = UIView()
+    scrollView.addSubview(contentView)
+    contentView.translatesAutoresizingMaskIntoConstraints = false
+    
+    // Create file info text
+    let fileInfoLabel = UILabel()
+    fileInfoLabel.numberOfLines = 0
+    fileInfoLabel.textColor = UIColor.label
+    fileInfoLabel.font = UIFont.systemFont(ofSize: 16, weight: .regular)
+    fileInfoLabel.textAlignment = .left
+    
+    var infoText = generateSavedFileInfo(fileName: fileName, fileURL: fileURL)
+    fileInfoLabel.text = infoText
+    
+    contentView.addSubview(fileInfoLabel)
+    fileInfoLabel.translatesAutoresizingMaskIntoConstraints = false
+    
+    // Set up constraints
+    NSLayoutConstraint.activate([
+      scrollView.topAnchor.constraint(equalTo: viewController.view.safeAreaLayoutGuide.topAnchor),
+      scrollView.leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: viewController.view.trailingAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: viewController.view.safeAreaLayoutGuide.bottomAnchor),
+      
+      contentView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+      contentView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+      contentView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+      contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+      contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+      
+      fileInfoLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
+      fileInfoLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+      fileInfoLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+      fileInfoLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20)
+    ])
+    
+    return viewController
+  }
+  
+  private func generateSavedFileInfo(fileName: String, fileURL: URL) -> String {
+    var text = "📁 SAVED ROOM SCAN\n"
+    text += "=" + String(repeating: "=", count: 25) + "\n\n"
+    
+    text += "📝 FILE INFORMATION\n"
+    text += "-" + String(repeating: "-", count: 20) + "\n"
+    text += "File Name: \(fileName)\n"
+    
+    // Get file size
+    do {
+      let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+      if let fileSize = fileAttributes[.size] as? Int64 {
+        let sizeInMB = Double(fileSize) / (1024 * 1024)
+        text += "File Size: \(String(format: "%.1f", sizeInMB)) MB\n"
+      }
+      
+      // Get creation date
+      if let creationDate = fileAttributes[.creationDate] as? Date {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        text += "Created: \(formatter.string(from: creationDate))\n"
+      }
+    } catch {
+      text += "File Size: Unable to determine\n"
+    }
+    
+    text += "Format: USDZ (Universal Scene Description)\n\n"
+    
+    text += "🏠 ABOUT THIS SCAN\n"
+    text += "-" + String(repeating: "-", count: 20) + "\n"
+    text += "This is a 3D room scan captured using RoomPlan.\n\n"
+    text += "The USDZ file contains:\n"
+    text += "• 3D geometry of the scanned room\n"
+    text += "• Detected objects and furniture\n"
+    text += "• Wall and surface information\n"
+    text += "• Spatial measurements and positioning\n\n"
+    
+    text += "📱 VIEWING OPTIONS\n"
+    text += "-" + String(repeating: "-", count: 20) + "\n"
+    text += "• 3D Preview: Interactive 3D model with AR view\n"
+    text += "• File Info: This detailed information view\n\n"
+    
+    text += "💡 TIP\n"
+    text += "-" + String(repeating: "-", count: 5) + "\n"
+    text += "Switch to the '3D Preview' tab to explore the room in augmented reality. You can rotate, zoom, and view the scan from different angles.\n\n"
+    
+    text += "The original measurement data was captured during scanning and is embedded in the 3D model."
+    
+    return text
+  }
+  
+  private func addFallback3DMessage(to viewController: UIViewController) {
+    let label = UILabel()
+    label.text = "3D Preview unavailable\nUSDZ file saved successfully!"
+    label.textAlignment = .center
+    label.numberOfLines = 0
+    label.textColor = UIColor.secondaryLabel
+    viewController.view.addSubview(label)
+    label.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      label.centerXAnchor.constraint(equalTo: viewController.view.centerXAnchor),
+      label.centerYAnchor.constraint(equalTo: viewController.view.centerYAnchor)
     ])
   }
   
   @objc private func closeButtonTapped() {
-    dismiss(animated: true)
+    dismiss(animated: true) {
+      self.onClose?()
+    }
   }
 }
 
+// MARK: - SavedUSDZViewController QuickLook Support
+
+#if canImport(QuickLook)
 @available(iOS 12.0, *)
-extension ARQuickLookViewController: QLPreviewControllerDataSource, QLPreviewControllerDelegate {
+extension SavedUSDZViewController: QLPreviewControllerDataSource {
   func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
-    return 1
+    return fileURL != nil ? 1 : 0
   }
   
   func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {

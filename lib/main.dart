@@ -101,11 +101,11 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
   Future<void> _loadSavedUSDZFiles() async {
     try {
       if (Platform.isIOS) {
-        final String result = await platform.invokeMethod('getSavedUSDZFiles');
+      final String result = await platform.invokeMethod('getSavedUSDZFiles');
         final List<dynamic> files = json.decode(result);
-        setState(() {
+      setState(() {
           _savedUSDZFiles = files.cast<Map<String, dynamic>>();
-        });
+      });
       }
     } catch (e) {
       print('Error loading USDZ files: $e');
@@ -114,10 +114,10 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
 
   Future<void> _startRoomScan() async {
     if (_isScanning) return;
-    
-    setState(() {
+        
+        setState(() {
       _isScanning = true;
-    });
+        });
 
     try {
       final result = await platform.invokeMethod('startRoomScan');
@@ -153,7 +153,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                 },
               ),
             ),
-          );
+        );
         }
       }
     } on PlatformException catch (e) {
@@ -209,7 +209,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
         ),
       );
     }
-  }
+    }
 
   Future<void> _importUSDZFile() async {
     try {
@@ -251,7 +251,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
             content: Text('Import failed: ${result['message'] ?? 'Unknown error'}'),
             backgroundColor: Colors.orange,
           ),
-        );
+              );
       }
     } on PlatformException catch (e) {
       if (e.code == 'USER_CANCELLED') {
@@ -354,10 +354,10 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-                  Text(
+            Text(
                     title,
                     style: const TextStyle(
-                      fontSize: 14,
+                fontSize: 14,
                       fontWeight: FontWeight.w500,
                       color: Colors.grey,
               ),
@@ -369,9 +369,9 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
-                  ),
-                ],
-              ),
+            ),
+          ],
+        ),
             ),
           ],
         ),
@@ -578,8 +578,8 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                         textStyle: const TextStyle(fontSize: 16),
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
-                      ),
-                    ),
+              ),
+            ),
 
                     const SizedBox(height: 24),
 
@@ -597,13 +597,13 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                           onPressed: _importUSDZFile,
                           icon: const Icon(Icons.upload_file, size: 18),
                           label: const Text('Import USDZ'),
-                          style: ElevatedButton.styleFrom(
+                style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             foregroundColor: Colors.white,
                             textStyle: const TextStyle(fontSize: 14),
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           ),
-                        ),
+                ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -614,7 +614,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                         child: const Padding(
                           padding: EdgeInsets.all(24.0),
                           child: Column(
-                            children: [
+                        children: [
                               Icon(Icons.folder_open, size: 48, color: Colors.grey),
                               SizedBox(height: 8),
                               Text(
@@ -624,7 +624,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                                   color: Colors.grey,
                                   fontWeight: FontWeight.w500,
                                 ),
-                              ),
+                          ),
                               SizedBox(height: 4),
                               Text(
                                 'Start a room scan or import a USDZ file',
@@ -633,8 +633,8 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                             ],
                           ),
                         ),
-                      )
-                    else
+              )
+            else
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -671,7 +671,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                                           TextButton(
                                             onPressed: () => Navigator.of(context).pop(true),
                                             child: const Text('Delete'),
-                                          ),
+              ),
                                         ],
                                       ),
                                     );
@@ -746,9 +746,9 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                           const Text('  - iPad Pro (4th gen) 11-inch and later'),
                           const Text('  - iPad Pro (5th gen) 12.9-inch and later'),
                         ],
-                      ),
-                    ),
                   ),
+                ),
+              ),
           ],
         ),
       ),

@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import simd
 
 #if canImport(RoomPlan)
 import RoomPlan
@@ -94,10 +95,10 @@ class SimpleRoomPlanHandler {
             return result
         }
         
-        print("DEBUG: iOS 16.0+ requirement met")
-        
+      print("DEBUG: iOS 16.0+ requirement met")
+      
         // Check if RoomPlan framework is available
-        #if canImport(RoomPlan)
+      #if canImport(RoomPlan)
         print("DEBUG: RoomPlan framework can be imported at compile time")
         result["frameworkAvailable"] = true
         
@@ -184,10 +185,10 @@ class SimpleRoomPlanHandler {
     static func attemptRoomScan() -> FlutterError {
         print("=== ROOM SCAN ATTEMPT DEBUG START ===")
         
-        guard #available(iOS 16.0, *) else {
+    guard #available(iOS 16.0, *) else {
             print("DEBUG: iOS version too old for RoomPlan scan")
             return FlutterError(code: "UNSUPPORTED_IOS_VERSION", 
-                              message: "RoomPlan requires iOS 16.0 or later", 
+                        message: "RoomPlan requires iOS 16.0 or later", 
                               details: nil)
         }
         
@@ -218,17 +219,17 @@ class SimpleRoomPlanHandler {
             guard let roomCaptureSessionClass = NSClassFromString("RoomCaptureSession") else {
                 print("DEBUG: ❌ RoomCaptureSession class not found for scanning")
                 return FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
-                                  message: "RoomPlan framework is not available on this device", 
+                        message: "RoomPlan framework is not available on this device", 
                                   details: nil)
-            }
-            
+    }
+    
             print("DEBUG: ✅ RoomCaptureSession class found for scanning")
             
             guard let isSupported = roomCaptureSessionClass.value(forKey: "isSupported") as? Bool,
-                  isSupported else {
+          isSupported else {
                 print("DEBUG: ❌ RoomPlan not supported via reflection")
                 return FlutterError(code: "DEVICE_NOT_SUPPORTED", 
-                                  message: "RoomPlan is not supported on this device. Requires LiDAR sensor.", 
+                        message: "RoomPlan is not supported on this device. Requires LiDAR sensor.", 
                                   details: nil)
             }
             
@@ -335,16 +336,16 @@ class SimpleRoomPlanHandler {
       } else {
         result(FlutterError(code: "NO_VIEW_CONTROLLER", 
                           message: "Could not find view controller to present scanner", 
-                          details: nil))
-      }
+                        details: nil))
     }
+  }
     #else
     result(FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
                       message: "RoomPlan framework not available", 
                       details: nil))
     #endif
-  }
-  
+}
+
   // MARK: - USDZ File Management
   
   private func getUSDZDirectory() -> URL {
@@ -691,87 +692,40 @@ class RoomScanViewController: UIViewController {
   }
   
   private func showPreview(for room: CapturedRoom) {
-    print("DEBUG: 🎉 Showing preview for captured room!")
-    print("DEBUG: Room has \(room.objects.count) objects")
+    print("DEBUG: 🎉 Showing tabbed preview for captured room!")
+    print("DEBUG: Room has \(room.objects.count) objects, \(room.walls.count) walls, \(room.openings.count) openings")
     
     // Update UI for preview mode
     view.subviews.forEach { $0.removeFromSuperview() }
     view.backgroundColor = UIColor.systemBackground
     
-    // Add preview label
-    let previewLabel = UILabel()
-    previewLabel.text = "Room Scan Complete"
-    previewLabel.textColor = UIColor.label
-    previewLabel.font = UIFont.boldSystemFont(ofSize: 24)
-    previewLabel.textAlignment = .center
-    view.addSubview(previewLabel)
-    previewLabel.translatesAutoresizingMaskIntoConstraints = false
+    // Create tab bar controller
+    let tabBarController = UITabBarController()
+    tabBarController.view.translatesAutoresizingMaskIntoConstraints = false
+    
+    // Create 3D Preview tab
+    let previewViewController = create3DPreviewViewController(for: room)
+    previewViewController.tabBarItem = UITabBarItem(title: "3D Preview", image: UIImage(systemName: "cube"), tag: 0)
+    
+    // Create Measurements tab
+    let measurementsViewController = createMeasurementsViewController(for: room)
+    measurementsViewController.tabBarItem = UITabBarItem(title: "Measurements", image: UIImage(systemName: "ruler"), tag: 1)
+    
+    // Set up tab bar controller
+    tabBarController.viewControllers = [previewViewController, measurementsViewController]
+    tabBarController.selectedIndex = 0 // Start with 3D preview
+    
+    // Add tab bar controller as child
+    addChild(tabBarController)
+    view.addSubview(tabBarController.view)
+    tabBarController.didMove(toParent: self)
+    
+    // Set up constraints for tab bar controller (leave space for buttons)
     NSLayoutConstraint.activate([
-      previewLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      previewLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60)
-    ])
-    
-    // Add object count label
-    let objectsLabel = UILabel()
-    objectsLabel.text = "Found \(room.objects.count) objects with measurements"
-    objectsLabel.textColor = UIColor.secondaryLabel
-    objectsLabel.font = UIFont.systemFont(ofSize: 18)
-    objectsLabel.textAlignment = .center
-    view.addSubview(objectsLabel)
-    objectsLabel.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.activate([
-      objectsLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      objectsLabel.topAnchor.constraint(equalTo: previewLabel.bottomAnchor, constant: 8)
-    ])
-    
-    // Add objects list
-    let objectsListLabel = UILabel()
-    objectsListLabel.numberOfLines = 0
-    objectsListLabel.textColor = UIColor.label
-    objectsListLabel.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    objectsListLabel.textAlignment = .left
-    
-    var objectsList = ""
-    for (index, object) in room.objects.enumerated() {
-      let dimensions = object.dimensions
-      let categoryName = getCategoryName(object.category)
-      let confidenceName = getConfidenceName(object.confidence)
-      
-      // Format measurements in plain text with clear labels
-      let width = String(format: "%.1f", dimensions.x)
-      let height = String(format: "%.1f", dimensions.y) 
-      let depth = String(format: "%.1f", dimensions.z)
-      
-      objectsList += "\(index + 1). \(categoryName.uppercased())\n"
-      objectsList += "   📏 Size: \(width)m × \(height)m × \(depth)m\n"
-      objectsList += "   🎯 Confidence: \(confidenceName)\n\n"
-    }
-    
-    objectsListLabel.text = objectsList.isEmpty ? "No objects detected" : objectsList
-    
-    // Add scroll view for objects list
-    let scrollView = UIScrollView()
-    scrollView.backgroundColor = UIColor.secondarySystemBackground
-    scrollView.layer.cornerRadius = 8
-    view.addSubview(scrollView)
-    scrollView.translatesAutoresizingMaskIntoConstraints = false
-    
-    scrollView.addSubview(objectsListLabel)
-    objectsListLabel.translatesAutoresizingMaskIntoConstraints = false
-    
-    NSLayoutConstraint.activate([
-      // Scroll view constraints
-      scrollView.topAnchor.constraint(equalTo: objectsLabel.bottomAnchor, constant: 20),
-      scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-      scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-      scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -80),
-      
-      // Objects list constraints
-      objectsListLabel.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 16),
-      objectsListLabel.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 16),
-      objectsListLabel.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -16),
-      objectsListLabel.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: -16),
-      objectsListLabel.widthAnchor.constraint(equalTo: scrollView.widthAnchor, constant: -32)
+      tabBarController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+      tabBarController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      tabBarController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      tabBarController.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -60)
     ])
     
     // Add Cancel button
@@ -785,7 +739,7 @@ class RoomScanViewController: UIViewController {
     view.addSubview(cancelButton)
     cancelButton.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      cancelButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+      cancelButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
       cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
       cancelButton.widthAnchor.constraint(equalToConstant: 100),
       cancelButton.heightAnchor.constraint(equalToConstant: 44)
@@ -802,7 +756,7 @@ class RoomScanViewController: UIViewController {
     view.addSubview(saveButton)
     saveButton.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      saveButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+      saveButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
       saveButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       saveButton.widthAnchor.constraint(equalToConstant: 100),
       saveButton.heightAnchor.constraint(equalToConstant: 44)
@@ -811,6 +765,214 @@ class RoomScanViewController: UIViewController {
     // Store the room for saving
     self.latestCapturedRoom = room
   }
+  
+  private func create3DPreviewViewController(for room: CapturedRoom) -> UIViewController {
+    let viewController = UIViewController()
+    viewController.view.backgroundColor = UIColor.systemBackground
+    
+    // Create temporary USDZ for preview
+    let tempDirectory = FileManager.default.temporaryDirectory
+    let tempFileName = "preview_\(UUID().uuidString).usdz"
+    let tempFileURL = tempDirectory.appendingPathComponent(tempFileName)
+    
+    do {
+      try room.export(to: tempFileURL)
+      
+      #if canImport(QuickLook)
+      if #available(iOS 12.0, *) {
+        let previewController = QLPreviewController()
+        previewController.dataSource = self
+        
+        // Store the temp file URL for the preview
+        self.tempPreviewURL = tempFileURL
+        
+        // Add preview controller as child
+        viewController.addChild(previewController)
+        viewController.view.addSubview(previewController.view)
+        previewController.view.frame = viewController.view.bounds
+        previewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        previewController.didMove(toParent: viewController)
+      } else {
+        addFallback3DMessage(to: viewController)
+      }
+      #else
+      addFallback3DMessage(to: viewController)
+      #endif
+    } catch {
+      print("DEBUG: Failed to create 3D preview: \(error)")
+      addFallback3DMessage(to: viewController)
+    }
+    
+    return viewController
+  }
+  
+  private func addFallback3DMessage(to viewController: UIViewController) {
+    let label = UILabel()
+    label.text = "3D Preview unavailable\nRoom scan saved successfully!"
+    label.textAlignment = .center
+    label.numberOfLines = 0
+    label.textColor = UIColor.secondaryLabel
+    viewController.view.addSubview(label)
+    label.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      label.centerXAnchor.constraint(equalTo: viewController.view.centerXAnchor),
+      label.centerYAnchor.constraint(equalTo: viewController.view.centerYAnchor)
+    ])
+  }
+  
+  private func createMeasurementsViewController(for room: CapturedRoom) -> UIViewController {
+    let viewController = UIViewController()
+    viewController.view.backgroundColor = UIColor.systemBackground
+    
+    // Create scroll view for measurements
+    let scrollView = UIScrollView()
+    scrollView.backgroundColor = UIColor.systemBackground
+    viewController.view.addSubview(scrollView)
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    
+    // Create content view
+    let contentView = UIView()
+    scrollView.addSubview(contentView)
+    contentView.translatesAutoresizingMaskIntoConstraints = false
+    
+    // Create measurements text
+    let measurementsLabel = UILabel()
+    measurementsLabel.numberOfLines = 0
+    measurementsLabel.textColor = UIColor.label
+    measurementsLabel.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    measurementsLabel.textAlignment = .left
+    
+    var measurementsText = generateCompleteMeasurements(for: room)
+    measurementsLabel.text = measurementsText
+    
+    contentView.addSubview(measurementsLabel)
+    measurementsLabel.translatesAutoresizingMaskIntoConstraints = false
+    
+    // Set up constraints
+    NSLayoutConstraint.activate([
+      scrollView.topAnchor.constraint(equalTo: viewController.view.safeAreaLayoutGuide.topAnchor),
+      scrollView.leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: viewController.view.trailingAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: viewController.view.safeAreaLayoutGuide.bottomAnchor),
+      
+      contentView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+      contentView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+      contentView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+      contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+      contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+      
+      measurementsLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
+      measurementsLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+      measurementsLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+      measurementsLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16)
+    ])
+    
+    return viewController
+  }
+  
+  private func generateCompleteMeasurements(for room: CapturedRoom) -> String {
+    var text = "🏠 COMPLETE ROOM MEASUREMENTS\n"
+    text += "=" + String(repeating: "=", count: 35) + "\n\n"
+    
+    // Room dimensions (estimated from walls)
+    if !room.walls.isEmpty {
+      text += "📐 ROOM DIMENSIONS\n"
+      text += "-" + String(repeating: "-", count: 20) + "\n"
+      
+      var minX: Float = Float.greatestFiniteMagnitude
+      var maxX: Float = -Float.greatestFiniteMagnitude
+      var minZ: Float = Float.greatestFiniteMagnitude
+      var maxZ: Float = -Float.greatestFiniteMagnitude
+      
+      for wall in room.walls {
+        let dimensions = wall.dimensions
+        let transform = wall.transform
+        // Extract position from transform matrix
+        let position = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+        
+        minX = min(minX, position.x - dimensions.x/2)
+        maxX = max(maxX, position.x + dimensions.x/2)
+        minZ = min(minZ, position.z - dimensions.z/2)
+        maxZ = max(maxZ, position.z + dimensions.z/2)
+      }
+      
+      let roomWidth = maxX - minX
+      let roomDepth = maxZ - minZ
+      
+      text += "Overall Room Size: \(String(format: "%.1f", roomWidth))m × \(String(format: "%.1f", roomDepth))m\n\n"
+    }
+    
+    // Walls
+    text += "🧱 WALLS (\(room.walls.count) detected)\n"
+    text += "-" + String(repeating: "-", count: 25) + "\n"
+    for (index, wall) in room.walls.enumerated() {
+      let dimensions = wall.dimensions
+      text += "Wall \(index + 1):\n"
+      text += "  📏 Width: \(String(format: "%.2f", dimensions.x))m\n"
+      text += "  📏 Height: \(String(format: "%.2f", dimensions.y))m\n"
+      text += "  📏 Thickness: \(String(format: "%.2f", dimensions.z))m\n\n"
+    }
+    
+         // Floor area estimation (calculated from walls)
+     if !room.walls.isEmpty {
+       text += "🔲 FLOOR AREA (estimated)\n"
+       text += "-" + String(repeating: "-", count: 30) + "\n"
+       
+       var minX: Float = Float.greatestFiniteMagnitude
+       var maxX: Float = -Float.greatestFiniteMagnitude
+       var minZ: Float = Float.greatestFiniteMagnitude
+       var maxZ: Float = -Float.greatestFiniteMagnitude
+       
+       for wall in room.walls {
+         let transform = wall.transform
+         let position = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+         let dimensions = wall.dimensions
+         
+         minX = min(minX, position.x - dimensions.x/2)
+         maxX = max(maxX, position.x + dimensions.x/2)
+         minZ = min(minZ, position.z - dimensions.z/2)
+         maxZ = max(maxZ, position.z + dimensions.z/2)
+       }
+       
+       let floorArea = (maxX - minX) * (maxZ - minZ)
+       text += "Estimated Floor Area: \(String(format: "%.2f", floorArea)) m²\n\n"
+     }
+    
+    // Openings (doors, windows)
+    if !room.openings.isEmpty {
+      text += "🚪 OPENINGS (\(room.openings.count) detected)\n"
+      text += "-" + String(repeating: "-", count: 30) + "\n"
+      for (index, opening) in room.openings.enumerated() {
+        let dimensions = opening.dimensions
+        text += "Opening \(index + 1):\n"
+        text += "  📏 Width: \(String(format: "%.2f", dimensions.x))m\n"
+        text += "  📏 Height: \(String(format: "%.2f", dimensions.y))m\n"
+        text += "  📏 Depth: \(String(format: "%.2f", dimensions.z))m\n\n"
+      }
+    }
+    
+    // Objects
+    if !room.objects.isEmpty {
+      text += "🪑 FURNITURE & OBJECTS (\(room.objects.count) detected)\n"
+      text += "-" + String(repeating: "-", count: 40) + "\n"
+      for (index, object) in room.objects.enumerated() {
+        let dimensions = object.dimensions
+        let categoryName = getCategoryName(object.category)
+        let confidenceName = getConfidenceName(object.confidence)
+        
+        text += "\(index + 1). \(categoryName.uppercased())\n"
+        text += "   📏 Width: \(String(format: "%.2f", dimensions.x))m\n"
+        text += "   📏 Height: \(String(format: "%.2f", dimensions.y))m\n"
+        text += "   📏 Depth: \(String(format: "%.2f", dimensions.z))m\n"
+        text += "   🎯 Confidence: \(confidenceName)\n\n"
+      }
+    }
+    
+    return text
+  }
+  
+  // Store temp preview URL for QuickLook
+  private var tempPreviewURL: URL?
   
   @objc private func cancelPreview() {
     print("DEBUG: Cancelling preview...")
@@ -829,8 +991,8 @@ class RoomScanViewController: UIViewController {
           let roomBuilder = RoomBuilder(options: [.beautifyObjects])
           let finalRoom = try await roomBuilder.capturedRoom(from: roomData)
           await MainActor.run {
-            print("DEBUG: Room processing complete, showing save dialog...")
-            self.showFileSaveDialog(for: finalRoom)
+            print("DEBUG: Room processing complete, saving internally...")
+            self.saveRoomInternally(finalRoom)
           }
         } catch {
           print("DEBUG: ❌ Failed to process room data: \(error)")
@@ -843,10 +1005,43 @@ class RoomScanViewController: UIViewController {
       }
     } else if let room = latestCapturedRoom {
       print("DEBUG: Using existing room data for saving...")
-      showFileSaveDialog(for: room)
+      saveRoomInternally(room)
     } else {
       print("DEBUG: No room data to save")
       return
+    }
+  }
+  
+  private func saveRoomInternally(_ room: CapturedRoom) {
+    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let roomScansDirectory = documentsPath.appendingPathComponent("RoomScans")
+    
+    // Create directory if needed
+    if !FileManager.default.fileExists(atPath: roomScansDirectory.path) {
+      do {
+        try FileManager.default.createDirectory(at: roomScansDirectory, withIntermediateDirectories: true, attributes: nil)
+      } catch {
+        print("DEBUG: Failed to create directory: \(error)")
+      }
+    }
+    
+    let timestamp = Int(Date().timeIntervalSince1970)
+    let fileName = "room_scan_\(timestamp).usdz"
+    let fileURL = roomScansDirectory.appendingPathComponent(fileName)
+    
+    do {
+      print("DEBUG: Saving room internally to: \(fileURL.path)")
+      try room.export(to: fileURL)
+      print("DEBUG: ✅ USDZ saved internally!")
+      
+             dismiss(animated: true) {
+         self.onScanComplete?(true, "Room scan saved successfully! Found \(room.objects.count) objects, \(room.walls.count) walls, \(room.openings.count) openings.", fileURL.path)
+       }
+    } catch {
+      print("DEBUG: ❌ USDZ save failed: \(error)")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Failed to save scan: \(error.localizedDescription)", nil)
+      }
     }
   }
   
@@ -923,7 +1118,7 @@ class RoomScanViewController: UIViewController {
 // MARK: - RoomCaptureViewDelegate & RoomCaptureSessionDelegate
 
 @available(iOS 16.0, *)
-extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDelegate, UIDocumentPickerDelegate {
+extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDelegate, UIDocumentPickerDelegate, QLPreviewControllerDataSource {
   
   // MARK: - RoomCaptureViewDelegate Methods
   
@@ -1120,6 +1315,16 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
     print("DEBUG: 📁 Document picker was cancelled")
     // Don't dismiss the preview - let user try again or cancel manually
     controller.dismiss(animated: true)
+  }
+  
+  // MARK: - QLPreviewControllerDataSource Methods
+  
+  func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+    return tempPreviewURL != nil ? 1 : 0
+  }
+  
+  func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+    return tempPreviewURL! as QLPreviewItem
   }
 }
 #endif

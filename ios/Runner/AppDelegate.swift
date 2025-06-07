@@ -93,31 +93,87 @@ import ARKit
       return
     }
     
-    // For now, return a success message indicating RoomPlan is detected and ready
-    // The actual scanning implementation will be added in the next step
-    let mockRoomData = """
-    {
-        "confidence": "high",
-        "dimensions": {
-            "width": 3.5,
-            "height": 2.8,
-            "length": 4.2
-        },
-        "surfaces": [
-            {
-                "category": "wall",
-                "confidence": "high",
-                "dimensions": {
-                    "width": 4.2,
-                    "height": 2.8
+    // Present a basic scanning interface that demonstrates RoomPlan is working
+    DispatchQueue.main.async {
+      let alert = UIAlertController(title: "🔥 RoomPlan Detected!", 
+                                  message: "RoomPlan is successfully detected and ready on your iPhone 14 Pro!\n\nFull scanning implementation will be available soon.\n\nCurrently returning sample room data to demonstrate the flow.", 
+                                  preferredStyle: .alert)
+      
+      alert.addAction(UIAlertAction(title: "Start Scan Demo", style: .default) { _ in
+        // Simulate a room scan with realistic data
+        let demoRoomData = """
+        {
+            "dimensions": {
+                "width": 4.2,
+                "height": 2.8,
+                "length": 3.6
+            },
+            "area": 15.12,
+            "volume": 42.34,
+            "surfaces": [
+                {
+                    "id": 0,
+                    "category": "wall",
+                    "dimensions": { "width": 4.2, "height": 2.8 },
+                    "area": 11.76
+                },
+                {
+                    "id": 1,
+                    "category": "wall", 
+                    "dimensions": { "width": 3.6, "height": 2.8 },
+                    "area": 10.08
+                },
+                {
+                    "id": 2,
+                    "category": "door",
+                    "dimensions": { "width": 0.8, "height": 2.0 },
+                    "area": 1.6
+                },
+                {
+                    "id": 3,
+                    "category": "window",
+                    "dimensions": { "width": 1.2, "height": 1.5 },
+                    "area": 1.8
                 }
-            }
-        ],
-        "objects": []
+            ],
+            "objects": [
+                {
+                    "id": 0,
+                    "category": "table",
+                    "dimensions": { "width": 1.2, "height": 0.75, "length": 0.8 },
+                    "volume": 0.72
+                },
+                {
+                    "id": 1,
+                    "category": "chair",
+                    "dimensions": { "width": 0.5, "height": 1.0, "length": 0.5 },
+                    "volume": 0.25
+                }
+            ],
+            "summary": {
+                "totalSurfaces": 4,
+                "totalObjects": 2,
+                "totalWalls": 2,
+                "totalDoors": 1,
+                "totalWindows": 1,
+                "roomType": "dining_room",
+                "scanQuality": "high"
+            },
+            "scanTimestamp": \(Int(Date().timeIntervalSince1970))
+        }
+        """
+        
+        self.saveRoomData(demoRoomData, result: result)
+      })
+      
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        result(FlutterError(code: "SCAN_CANCELLED", 
+                          message: "Room scan was cancelled by user", 
+                          details: nil))
+      })
+      
+      controller.present(alert, animated: true)
     }
-    """
-    
-    saveRoomData(mockRoomData, result: result)
   }
   
   private func saveRoomData(_ roomData: String, result: @escaping FlutterResult) {
@@ -421,5 +477,7 @@ extension ARQuickLookViewController: QLPreviewControllerDataSource, QLPreviewCon
     return fileURL! as QLPreviewItem
   }
 }
+
+
 
 

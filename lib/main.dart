@@ -204,7 +204,32 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
     });
 
     try {
+      // Show scanning dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Room Scanning'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                const Text('Follow the on-screen instructions to scan your room.'),
+                const SizedBox(height: 8),
+                const Text('Move around to capture all walls, floors, and furniture.'),
+              ],
+            ),
+          );
+        },
+      );
+
       final String result = await platform.invokeMethod('startRoomScan');
+      
+      // Dismiss the scanning dialog
+      Navigator.of(context).pop();
+      
       final Map<String, dynamic> responseData = json.decode(result);
       final Map<String, dynamic> roomData = json.decode(responseData['scanData']);
       
@@ -214,15 +239,78 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
         _roomData = roomData;
       });
       
+      // Show success message with scan details
+      _showScanResults(roomData);
+      
       // Reload saved scans to include the new one
       _loadSavedScans();
     } on PlatformException catch (e) {
+      // Dismiss the scanning dialog if it's open
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
       setState(() {
         _isScanning = false;
         _status = 'Scan failed';
         _errorMessage = 'Error: ${e.message}';
       });
+      
+      // Show error dialog
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Scan Failed'),
+            content: Text(e.message ?? 'Unknown error occurred'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
     }
+  }
+
+  void _showScanResults(Map<String, dynamic> roomData) {
+    final summary = roomData['summary'] as Map<String, dynamic>?;
+    final dimensions = roomData['dimensions'] as Map<String, dynamic>?;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('✅ Scan Complete!'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Room Type: ${summary?['roomType'] ?? 'Unknown'}'),
+              Text('Scan Quality: ${summary?['scanQuality'] ?? 'Unknown'}'),
+              if (dimensions != null) ...[
+                const SizedBox(height: 8),
+                Text('Dimensions:'),
+                Text('  Width: ${dimensions['width']?.toStringAsFixed(2) ?? 'N/A'}m'),
+                Text('  Length: ${dimensions['length']?.toStringAsFixed(2) ?? 'N/A'}m'),
+                Text('  Height: ${dimensions['height']?.toStringAsFixed(2) ?? 'N/A'}m'),
+              ],
+              const SizedBox(height: 8),
+              Text('Surfaces detected: ${summary?['totalSurfaces'] ?? 0}'),
+              Text('Objects detected: ${summary?['totalObjects'] ?? 0}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Great!'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _deleteSavedScan(String fileName) async {

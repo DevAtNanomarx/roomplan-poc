@@ -566,8 +566,22 @@ class RoomScanViewController: UIViewController {
     roomCaptureView.captureSession.stop()
     isScanning = false
     
-    // The delegate method will handle the rest
+    // Wait a moment for the session to process final data, then use latest captured room
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+      if let room = self.latestCapturedRoom {
+        print("DEBUG: Using latest captured room data from scanning")
+        self.processCapturedRoom(room)
+      } else {
+        print("DEBUG: No room data available - scan may not be complete")
+        self.dismiss(animated: true) {
+          self.onScanComplete?(false, "Scan incomplete - please scan more of the room", nil)
+        }
+      }
+    }
   }
+  
+  // Store the most recent room data
+  private var latestCapturedRoom: CapturedRoom?
 }
 
 // MARK: - RoomCaptureViewDelegate & RoomCaptureSessionDelegate
@@ -634,14 +648,139 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
   
   func captureSession(_ session: RoomCaptureSession, didAdd room: CapturedRoom) {
     print("DEBUG: 📍 Room scanning started - objects: \(room.objects.count)")
+    latestCapturedRoom = room
+    logDetectedObjects(room)
   }
   
   func captureSession(_ session: RoomCaptureSession, didChange room: CapturedRoom) {
     print("DEBUG: 🔄 Room scan updated - objects: \(room.objects.count)")
+    latestCapturedRoom = room
+    logDetectedObjects(room)
   }
   
   func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
     print("DEBUG: ⚡ Room scan progress - objects: \(room.objects.count)")
+    latestCapturedRoom = room
+    if room.objects.count > 0 {
+      logDetectedObjects(room)
+    }
+  }
+  
+  func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
+    print("DEBUG: 🏁 Room capture session ended")
+    if let error = error {
+      print("DEBUG: ❌ Room capture session ended with error: \(error)")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Scan failed: \(error.localizedDescription)", nil)
+      }
+    } else {
+      print("DEBUG: ✅ Room capture session ended successfully")
+      // Process the captured room data using RoomBuilder
+      Task {
+        do {
+          let roomBuilder = RoomBuilder(options: [.beautifyObjects])
+          let finalRoom = try await roomBuilder.capturedRoom(from: data)
+          await MainActor.run {
+            self.processCapturedRoom(finalRoom)
+          }
+        } catch {
+          print("DEBUG: ❌ Failed to process room data: \(error)")
+          await MainActor.run {
+            self.dismiss(animated: true) {
+              self.onScanComplete?(false, "Failed to process scan: \(error.localizedDescription)", nil)
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  private func logDetectedObjects(_ room: CapturedRoom) {
+    for (index, object) in room.objects.enumerated() {
+      let dimensions = object.dimensions
+      let categoryName = getCategoryName(object.category)
+      let confidenceName = getConfidenceName(object.confidence)
+      print("DEBUG:   Object \(index + 1): \(categoryName) - \(String(format: "%.2f", dimensions.x))×\(String(format: "%.2f", dimensions.y))×\(String(format: "%.2f", dimensions.z))m (\(confidenceName))")
+    }
+  }
+  
+  private func getCategoryName(_ category: CapturedRoom.Object.Category) -> String {
+    switch category {
+    case .storage: return "storage"
+    case .refrigerator: return "refrigerator"
+    case .stove: return "stove"
+    case .bed: return "bed"
+    case .sink: return "sink"
+    case .washerDryer: return "washerDryer"
+    case .toilet: return "toilet"
+    case .bathtub: return "bathtub"
+    case .oven: return "oven"
+    case .dishwasher: return "dishwasher"
+    case .table: return "table"
+    case .sofa: return "sofa"
+    case .chair: return "chair"
+    case .fireplace: return "fireplace"
+    case .television: return "television"
+    case .stairs: return "stairs"
+    @unknown default: return "unknown"
+    }
+  }
+  
+  private func getConfidenceName(_ confidence: CapturedRoom.Confidence) -> String {
+    switch confidence {
+    case .high: return "high"
+    case .medium: return "medium"
+    case .low: return "low"
+    @unknown default: return "unknown"
+    }
+  }
+  
+  private func processCapturedRoom(_ room: CapturedRoom) {
+    print("DEBUG: 🎉 Processing captured room!")
+    print("DEBUG: Room captured successfully, exporting to USDZ...")
+    print("DEBUG: Room has \(room.objects.count) objects")
+    
+    // Log detected objects with measurements
+    for (index, object) in room.objects.enumerated() {
+      let dimensions = object.dimensions
+      let categoryName = getCategoryName(object.category)
+      let confidenceName = getConfidenceName(object.confidence)
+      print("DEBUG: Object \(index + 1): \(categoryName)")
+      print("DEBUG:   Dimensions: \(String(format: "%.2f", dimensions.x))m × \(String(format: "%.2f", dimensions.y))m × \(String(format: "%.2f", dimensions.z))m")
+      print("DEBUG:   Confidence: \(confidenceName)")
+    }
+    
+    // Save to USDZ file
+    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let roomScansDirectory = documentsPath.appendingPathComponent("RoomScans")
+    
+    // Create directory if needed
+    if !FileManager.default.fileExists(atPath: roomScansDirectory.path) {
+      do {
+        try FileManager.default.createDirectory(at: roomScansDirectory, withIntermediateDirectories: true, attributes: nil)
+      } catch {
+        print("DEBUG: Failed to create directory: \(error)")
+      }
+    }
+    
+    let timestamp = Int(Date().timeIntervalSince1970)
+    let fileName = "room_scan_\(timestamp).usdz"
+    let fileURL = roomScansDirectory.appendingPathComponent(fileName)
+    
+    do {
+      print("DEBUG: Exporting to: \(fileURL.path)")
+      try room.export(to: fileURL)
+      print("DEBUG: ✅ USDZ export successful!")
+      
+      dismiss(animated: true) {
+        self.onScanComplete?(true, "Room scan saved successfully! Found \(room.objects.count) objects.", fileURL.path)
+      }
+    } catch {
+      print("DEBUG: ❌ USDZ export failed: \(error)")
+      dismiss(animated: true) {
+        self.onScanComplete?(false, "Failed to save scan: \(error.localizedDescription)", nil)
+      }
+    }
   }
   
   func captureSession(_ session: RoomCaptureSession, didRemove room: CapturedRoom) {
@@ -650,14 +789,6 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
   
   func captureSession(_ session: RoomCaptureSession, didStartWith configuration: RoomCaptureSession.Configuration) {
     print("DEBUG: 🚀 Room capture session started with configuration")
-  }
-  
-  func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
-    if let error = error {
-      print("DEBUG: ❌ Room capture session ended with error: \(error)")
-    } else {
-      print("DEBUG: ✅ Room capture session ended successfully")
-    }
   }
 }
 #endif

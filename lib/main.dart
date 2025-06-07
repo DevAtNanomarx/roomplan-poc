@@ -123,24 +123,45 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
       final result = await platform.invokeMethod('startRoomScan');
       
       if (result is Map) {
-        // Show success message
+        final message = result['message'] ?? 'Room scan completed';
+        final success = result['success'] ?? false;
+        
+        // Show result message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message'] ?? 'Room scan started'),
-            backgroundColor: Colors.green,
+            content: Text(message),
+            backgroundColor: success ? Colors.green : Colors.orange,
+            duration: Duration(seconds: success ? 3 : 2),
           ),
         );
         
         // If a file was saved, reload the list
-        if (result['filePath'] != null) {
+        if (result['filePath'] != null && success) {
           await _loadSavedUSDZFiles();
+          
+          // Show additional success info
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🎉 USDZ file saved! View it in the "Saved Room Scans" section below.'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'VIEW FILES',
+                textColor: Colors.white,
+                onPressed: () {
+                  // Scroll to saved files section (if needed)
+                },
+              ),
+            ),
+          );
         }
       }
     } on PlatformException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: ${e.message}'),
+          content: Text('Scan Error: ${e.message}'),
           backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
         ),
       );
     } catch (e) {

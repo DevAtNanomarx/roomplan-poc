@@ -713,7 +713,7 @@ class RoomScanViewController: UIViewController {
     
     // Add object count label
     let objectsLabel = UILabel()
-    objectsLabel.text = "Found \(room.objects.count) objects"
+    objectsLabel.text = "Found \(room.objects.count) objects with measurements"
     objectsLabel.textColor = UIColor.secondaryLabel
     objectsLabel.font = UIFont.systemFont(ofSize: 18)
     objectsLabel.textAlignment = .center
@@ -728,7 +728,7 @@ class RoomScanViewController: UIViewController {
     let objectsListLabel = UILabel()
     objectsListLabel.numberOfLines = 0
     objectsListLabel.textColor = UIColor.label
-    objectsListLabel.font = UIFont.systemFont(ofSize: 14)
+    objectsListLabel.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     objectsListLabel.textAlignment = .left
     
     var objectsList = ""
@@ -736,7 +736,15 @@ class RoomScanViewController: UIViewController {
       let dimensions = object.dimensions
       let categoryName = getCategoryName(object.category)
       let confidenceName = getConfidenceName(object.confidence)
-      objectsList += "\(index + 1). \(categoryName) (\(String(format: "%.1f", dimensions.x))×\(String(format: "%.1f", dimensions.y))×\(String(format: "%.1f", dimensions.z))m) - \(confidenceName)\n"
+      
+      // Format measurements in plain text with clear labels
+      let width = String(format: "%.1f", dimensions.x)
+      let height = String(format: "%.1f", dimensions.y) 
+      let depth = String(format: "%.1f", dimensions.z)
+      
+      objectsList += "\(index + 1). \(categoryName.uppercased())\n"
+      objectsList += "   📏 Size: \(width)m × \(height)m × \(depth)m\n"
+      objectsList += "   🎯 Confidence: \(confidenceName)\n\n"
     }
     
     objectsListLabel.text = objectsList.isEmpty ? "No objects detected" : objectsList
@@ -982,7 +990,15 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
       let dimensions = object.dimensions
       let categoryName = getCategoryName(object.category)
       let confidenceName = getConfidenceName(object.confidence)
-      print("DEBUG:   Object \(index + 1): \(categoryName) - \(String(format: "%.2f", dimensions.x))×\(String(format: "%.2f", dimensions.y))×\(String(format: "%.2f", dimensions.z))m (\(confidenceName))")
+      
+      // Log measurements in clear plain text format
+      let width = String(format: "%.2f", dimensions.x)
+      let height = String(format: "%.2f", dimensions.y)
+      let depth = String(format: "%.2f", dimensions.z)
+      
+      print("DEBUG:   Object \(index + 1): \(categoryName.uppercased())")
+      print("DEBUG:     📏 Measurements: Width=\(width)m, Height=\(height)m, Depth=\(depth)m")
+      print("DEBUG:     🎯 Detection Confidence: \(confidenceName)")
     }
   }
   
@@ -1022,14 +1038,23 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
     print("DEBUG: Room captured successfully, exporting to USDZ...")
     print("DEBUG: Room has \(room.objects.count) objects")
     
-    // Log detected objects with measurements
+    // Log detected objects with measurements in plain text
     for (index, object) in room.objects.enumerated() {
       let dimensions = object.dimensions
       let categoryName = getCategoryName(object.category)
       let confidenceName = getConfidenceName(object.confidence)
-      print("DEBUG: Object \(index + 1): \(categoryName)")
-      print("DEBUG:   Dimensions: \(String(format: "%.2f", dimensions.x))m × \(String(format: "%.2f", dimensions.y))m × \(String(format: "%.2f", dimensions.z))m")
-      print("DEBUG:   Confidence: \(confidenceName)")
+      
+      let width = String(format: "%.2f", dimensions.x)
+      let height = String(format: "%.2f", dimensions.y)
+      let depth = String(format: "%.2f", dimensions.z)
+      
+      print("DEBUG: Object \(index + 1): \(categoryName.uppercased())")
+      print("DEBUG:   📏 Precise Measurements:")
+      print("DEBUG:     Width: \(width) meters")
+      print("DEBUG:     Height: \(height) meters") 
+      print("DEBUG:     Depth: \(depth) meters")
+      print("DEBUG:   🎯 Detection Confidence: \(confidenceName)")
+      print("DEBUG:   ---")
     }
     
     // Save to USDZ file

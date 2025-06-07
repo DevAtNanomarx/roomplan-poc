@@ -50,22 +50,15 @@ import ARKit
   }
   
   private func checkRoomPlanSupport(result: @escaping FlutterResult) {
+    #if canImport(RoomPlan)
     if #available(iOS 16.0, *) {
-      // Use runtime checking to avoid compilation issues
-      guard let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") else {
-        result(false)
-        return
-      }
-      
-      // Use KVC to call isSupported property
-      if let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool {
-        result(isSupported)
-      } else {
-        result(false)
-      }
+      result(RoomCaptureController.isSupported)
     } else {
       result(false)
     }
+    #else
+    result(false)
+    #endif
   }
   
   private func startRoomScan(result: @escaping FlutterResult, controller: FlutterViewController) {
@@ -76,104 +69,60 @@ import ARKit
       return
     }
     
-    // Use runtime checking to avoid compilation issues
-    guard let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") else {
-      result(FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
-                        message: "RoomPlan framework is not available on this device", 
-                        details: nil))
-      return
-    }
-    
-    // Check if RoomPlan is supported using runtime method calling
-    if let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool,
-       !isSupported {
-      result(FlutterError(code: "DEVICE_NOT_SUPPORTED", 
-                        message: "RoomPlan is not supported on this device. Requires LiDAR sensor.", 
-                        details: nil))
-      return
-    }
-    
-    // Present a basic scanning interface that demonstrates RoomPlan is working
-    DispatchQueue.main.async {
-      let alert = UIAlertController(title: "🔥 RoomPlan Detected!", 
-                                  message: "RoomPlan is successfully detected and ready on your iPhone 14 Pro!\n\nFull scanning implementation will be available soon.\n\nCurrently returning sample room data to demonstrate the flow.", 
-                                  preferredStyle: .alert)
-      
-      alert.addAction(UIAlertAction(title: "Start Scan Demo", style: .default) { _ in
-        // Simulate a room scan with realistic data
-        let demoRoomData = """
-        {
-            "dimensions": {
-                "width": 4.2,
-                "height": 2.8,
-                "length": 3.6
-            },
-            "area": 15.12,
-            "volume": 42.34,
-            "surfaces": [
-                {
-                    "id": 0,
-                    "category": "wall",
-                    "dimensions": { "width": 4.2, "height": 2.8 },
-                    "area": 11.76
-                },
-                {
-                    "id": 1,
-                    "category": "wall", 
-                    "dimensions": { "width": 3.6, "height": 2.8 },
-                    "area": 10.08
-                },
-                {
-                    "id": 2,
-                    "category": "door",
-                    "dimensions": { "width": 0.8, "height": 2.0 },
-                    "area": 1.6
-                },
-                {
-                    "id": 3,
-                    "category": "window",
-                    "dimensions": { "width": 1.2, "height": 1.5 },
-                    "area": 1.8
-                }
-            ],
-            "objects": [
-                {
-                    "id": 0,
-                    "category": "table",
-                    "dimensions": { "width": 1.2, "height": 0.75, "length": 0.8 },
-                    "volume": 0.72
-                },
-                {
-                    "id": 1,
-                    "category": "chair",
-                    "dimensions": { "width": 0.5, "height": 1.0, "length": 0.5 },
-                    "volume": 0.25
-                }
-            ],
-            "summary": {
-                "totalSurfaces": 4,
-                "totalObjects": 2,
-                "totalWalls": 2,
-                "totalDoors": 1,
-                "totalWindows": 1,
-                "roomType": "dining_room",
-                "scanQuality": "high"
-            },
-            "scanTimestamp": \(Int(Date().timeIntervalSince1970))
-        }
-        """
-        
-        self.saveRoomData(demoRoomData, result: result)
-      })
-      
-      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-        result(FlutterError(code: "SCAN_CANCELLED", 
-                          message: "Room scan was cancelled by user", 
+    #if canImport(RoomPlan)
+    if #available(iOS 16.0, *) {
+      guard RoomCaptureController.isSupported else {
+        result(FlutterError(code: "DEVICE_NOT_SUPPORTED", 
+                          message: "RoomPlan is not supported on this device. Requires LiDAR sensor.", 
                           details: nil))
-      })
+        return
+      }
       
-      controller.present(alert, animated: true)
+      // Present the real RoomScan view controller
+      DispatchQueue.main.async {
+        let realRoomScanVC = RealRoomScanViewController()
+        realRoomScanVC.completionHandler = { scanResult in
+          switch scanResult {
+          case .success(let roomData):
+            self.saveRoomData(roomData, result: result)
+          case .failure(let error):
+            if let roomScanError = error as? RoomScanError {
+              switch roomScanError {
+              case .notSupported:
+                result(FlutterError(code: "DEVICE_NOT_SUPPORTED", 
+                                  message: roomScanError.localizedDescription, 
+                                  details: nil))
+              case .cancelled:
+                result(FlutterError(code: "SCAN_CANCELLED", 
+                                  message: roomScanError.localizedDescription, 
+                                  details: nil))
+              case .processingFailed:
+                result(FlutterError(code: "PROCESSING_FAILED", 
+                                  message: roomScanError.localizedDescription, 
+                                  details: nil))
+              }
+            } else {
+              result(FlutterError(code: "SCAN_ERROR", 
+                                message: error.localizedDescription, 
+                                details: nil))
+            }
+          }
+        }
+        
+        // Present modally with full screen
+        realRoomScanVC.modalPresentationStyle = .fullScreen
+        controller.present(realRoomScanVC, animated: true)
+      }
+    } else {
+      result(FlutterError(code: "UNSUPPORTED_IOS_VERSION", 
+                        message: "RoomPlan requires iOS 16.0 or later", 
+                        details: nil))
     }
+    #else
+    result(FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
+                      message: "RoomPlan framework is not available on this device", 
+                      details: nil))
+    #endif
   }
   
   private func saveRoomData(_ roomData: String, result: @escaping FlutterResult) {

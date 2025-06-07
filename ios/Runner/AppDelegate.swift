@@ -107,14 +107,27 @@ extension UIDevice {
     }
     
     var hasLiDAR: Bool {
+        print("=== LIDAR DETECTION START ===")
+        print("DEBUG: Checking LiDAR capability for device: \(self.modelName)")
+        
         // Check for actual LiDAR hardware capability using ARKit
-        guard #available(iOS 13.0, *) else { return false }
+        guard #available(iOS 13.0, *) else { 
+            print("DEBUG: iOS version too old for ARKit LiDAR detection")
+            return false 
+        }
         
         #if canImport(ARKit)
+        print("DEBUG: ARKit available for LiDAR detection")
+        
         // Primary check: Scene reconstruction support (iOS 14+) indicates LiDAR availability
         if #available(iOS 14.0, *) {
+            let sceneReconstructionSupported = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
+            print("DEBUG: iOS 14+ Scene reconstruction (.mesh) supported: \(sceneReconstructionSupported)")
+            
             // Scene reconstruction with mesh is only available on LiDAR devices
-            if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+            if sceneReconstructionSupported {
+                print("DEBUG: ✅ LiDAR detected via scene reconstruction support")
+                print("=== LIDAR DETECTION END ===")
                 return true
             }
         }
@@ -122,14 +135,27 @@ extension UIDevice {
         // Secondary check: For iOS 13+ devices, check for enhanced depth capabilities
         // This is more reliable than model name checking
         if #available(iOS 13.4, *) {
+            let personSegmentationSupported = ARWorldTrackingConfiguration.supportsFrameSemantics(.personSegmentationWithDepth)
+            print("DEBUG: iOS 13.4+ Person segmentation with depth supported: \(personSegmentationSupported)")
+            
             // Check if the device supports people occlusion, which requires depth sensing capabilities
             // typically found on LiDAR devices
-            return ARWorldTrackingConfiguration.supportsFrameSemantics(.personSegmentationWithDepth)
+            if personSegmentationSupported {
+                print("DEBUG: ✅ LiDAR detected via person segmentation with depth")
+                print("=== LIDAR DETECTION END ===")
+                return personSegmentationSupported
+            }
         }
         
         // Fallback: Basic ARWorldTracking support (less reliable indicator)
-        return ARWorldTrackingConfiguration.isSupported
+        let basicARSupported = ARWorldTrackingConfiguration.isSupported
+        print("DEBUG: Basic ARWorldTracking supported: \(basicARSupported)")
+        print("DEBUG: ⚠️ Using fallback ARWorldTracking detection (less reliable)")
+        print("=== LIDAR DETECTION END ===")
+        return basicARSupported
         #else
+        print("DEBUG: ARKit not available at compile time")
+        print("=== LIDAR DETECTION END ===")
         return false
         #endif
     }
@@ -179,21 +205,47 @@ extension UIDevice {
   }
   
   private func checkRoomPlanSupport(result: @escaping FlutterResult) {
+    print("=== ROOMPLAN SUPPORT CHECK START ===")
+    print("DEBUG: iOS Version: \(UIDevice.current.systemVersion)")
+    print("DEBUG: Device Model: \(UIDevice.current.modelName)")
+    print("DEBUG: Has LiDAR: \(UIDevice.current.hasLiDAR)")
+    
     if #available(iOS 16.0, *) {
-      print("DEBUG: Checking RoomPlan support on iOS \(UIDevice.current.systemVersion)")
+      print("DEBUG: iOS 16.0+ requirement met")
+      
+      // Check if RoomPlan can be imported at compile time
+      #if canImport(RoomPlan)
+      print("DEBUG: RoomPlan import available at compile time")
+      #else
+      print("DEBUG: RoomPlan import NOT available at compile time")
+      #endif
       
       // Multiple ways to check RoomPlan availability
       let bundlePath = Bundle.main.path(forResource: "RoomPlan", ofType: "framework")
       let classExists = NSClassFromString("RoomCaptureController") != nil
       let frameworkBundle = Bundle(identifier: "com.apple.RoomPlan")
       
-      print("DEBUG: Bundle path: \(bundlePath ?? "nil")")
-      print("DEBUG: Class exists: \(classExists)")
-      print("DEBUG: Framework bundle: \(frameworkBundle?.description ?? "nil")")
+      print("DEBUG: Bundle path search result: \(bundlePath ?? "nil")")
+      print("DEBUG: NSClassFromString('RoomCaptureController') != nil: \(classExists)")
+      print("DEBUG: Framework bundle by identifier: \(frameworkBundle?.description ?? "nil")")
+      
+      // Additional checks
+      let roomPlanBundle = Bundle(identifier: "com.apple.RoomPlan")
+      print("DEBUG: RoomPlan bundle: \(roomPlanBundle?.bundlePath ?? "nil")")
+      
+      // Check if we can access RoomPlan classes directly
+      #if canImport(RoomPlan)
+      if #available(iOS 16.0, *) {
+        print("DEBUG: Attempting direct RoomCaptureController check...")
+        let directCheck = RoomCaptureController.isSupported
+        print("DEBUG: Direct RoomCaptureController.isSupported: \(directCheck)")
+      }
+      #endif
       
       // Check if RoomPlan framework exists at runtime
       guard classExists || bundlePath != nil || frameworkBundle != nil else {
-        print("DEBUG: RoomPlan framework not found in bundle")
+        print("DEBUG: ❌ RoomPlan framework not found in bundle")
+        print("DEBUG: classExists: \(classExists), bundlePath != nil: \(bundlePath != nil), frameworkBundle != nil: \(frameworkBundle != nil)")
         
         let deviceInfo = [
           "isSupported": false,
@@ -215,10 +267,13 @@ extension UIDevice {
         return
       }
       
-      print("DEBUG: RoomPlan class found, checking support")
+      print("DEBUG: ✅ RoomPlan framework found, proceeding with support check")
       
       // Use runtime reflection to check RoomPlan support
+      print("DEBUG: Attempting NSClassFromString('RoomCaptureController')...")
       guard let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") else {
+        print("DEBUG: ❌ NSClassFromString('RoomCaptureController') returned nil")
+        
         let deviceInfo = [
           "isSupported": false,
           "iOSVersion": UIDevice.current.systemVersion,
@@ -239,9 +294,13 @@ extension UIDevice {
         return
       }
       
+      print("DEBUG: ✅ RoomCaptureController class found successfully")
+      print("DEBUG: Class description: \(roomCaptureControllerClass)")
+      
       // Use KVC to safely call isSupported
+      print("DEBUG: Attempting to get 'isSupported' property via KVC...")
       guard let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool else {
-        print("DEBUG: Could not get isSupported property")
+        print("DEBUG: ❌ KVC failed to get 'isSupported' property")
         
         let deviceInfo = [
           "isSupported": false,
@@ -263,7 +322,9 @@ extension UIDevice {
         return
       }
       
+      print("DEBUG: ✅ Successfully got isSupported property!")
       print("DEBUG: RoomPlan isSupported = \(isSupported)")
+      print("=== ROOMPLAN SUPPORT CHECK END ===")
       
       let deviceInfo = [
         "isSupported": isSupported,
@@ -282,6 +343,9 @@ extension UIDevice {
         result("{\"isSupported\": false, \"error\": \"JSON serialization failed\"}")
       }
     } else {
+      print("DEBUG: ❌ iOS version too old: \(UIDevice.current.systemVersion)")
+      print("=== ROOMPLAN SUPPORT CHECK END ===")
+      
       let deviceInfo = [
         "isSupported": false,
         "iOSVersion": UIDevice.current.systemVersion,

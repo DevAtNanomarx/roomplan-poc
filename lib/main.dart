@@ -42,6 +42,7 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
   List<Map<String, dynamic>> _savedScans = [];
   List<Map<String, dynamic>> _savedUSDZFiles = [];
   bool _isLoading = false;
+  Map<String, dynamic>? _deviceInfo;
 
   @override
   void initState() {
@@ -50,6 +51,10 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
   }
 
   Future<void> _checkSupport() async {
+    setState(() {
+      _status = 'Checking RoomPlan support...';
+    });
+
     try {
       // Check if we're running on iOS
       if (!Platform.isIOS) {
@@ -57,19 +62,36 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
           _isSupported = false;
           _status = 'RoomPlan not supported';
           _errorMessage = 'RoomPlan is only available on iOS devices with LiDAR';
+          _deviceInfo = {
+            'isSupported': false,
+            'platform': 'Android/Other',
+            'error': 'RoomPlan only available on iOS'
+          };
         });
         return;
       }
 
-      final bool supported = await platform.invokeMethod('isRoomPlanSupported');
+      final String result = await platform.invokeMethod('isRoomPlanSupported');
+      final Map<String, dynamic> deviceInfo = json.decode(result);
+      
       setState(() {
-        _isSupported = supported;
-        if (supported) {
-          _status = 'RoomPlan is supported! Ready to scan.';
+        _deviceInfo = deviceInfo;
+        _isSupported = deviceInfo['isSupported'] ?? false;
+        
+        if (_isSupported) {
+          _status = '🎉 RoomPlan Ready! Device has LiDAR support.';
           _loadSavedScans(); // Only load saved scans if RoomPlan is supported
         } else {
-          _status = 'RoomPlan not supported - USDZ files available';
-          _errorMessage = 'RoomPlan is not supported on this device. You can still upload and view USDZ files.';
+          _status = 'RoomPlan not available on this device';
+          if (deviceInfo['error'] != null) {
+            _errorMessage = deviceInfo['error'];
+          } else if (deviceInfo['frameworkAvailable'] == false) {
+            _errorMessage = 'RoomPlan framework not available. This typically happens on iOS Simulator.';
+          } else if (deviceInfo['hasLiDAR'] == false) {
+            _errorMessage = 'This device does not have a LiDAR sensor. RoomPlan requires iPhone 12 Pro+ or iPad Pro with LiDAR.';
+          } else {
+            _errorMessage = 'RoomPlan requirements not met.';
+          }
         }
       });
       
@@ -80,6 +102,11 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
         _isSupported = false;
         _status = 'Error checking support';
         _errorMessage = 'Failed to check RoomPlan support: ${e.message}';
+        _deviceInfo = {
+          'isSupported': false,
+          'error': e.message,
+          'code': e.code
+        };
       });
     }
   }
@@ -334,6 +361,38 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
       _status = 'Loaded saved scan';
       _errorMessage = null;
     });
+  }
+
+  Widget _buildInfoRow(String label, String value, {bool isError = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: isError ? Colors.red.shade800 : Colors.grey.shade800,
+                fontSize: 13,
+                fontWeight: isError ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildRoomDataDisplay() {
@@ -644,24 +703,77 @@ class _RoomPlanHomePageState extends State<RoomPlanHomePage> {
                   width: 1.0,
                 ),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    _isSupported ? Icons.check_circle : Icons.error,
-                    color: _isSupported ? Colors.green : Colors.red,
+                  Row(
+                    children: [
+                      Icon(
+                        _isSupported ? Icons.check_circle : Icons.error,
+                        color: _isSupported ? Colors.green : Colors.red,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _isSupported 
+                            ? 'RoomPlan is supported on this device'
+                            : 'RoomPlan not available',
+                          style: TextStyle(
+                            color: _isSupported ? Colors.green.shade800 : Colors.red.shade800,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, size: 20),
+                        onPressed: _checkSupport,
+                        tooltip: 'Refresh device info',
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _isSupported 
-                        ? 'RoomPlan is supported on this device'
-                        : _errorMessage ?? 'RoomPlan not supported',
-                      style: TextStyle(
-                        color: _isSupported ? Colors.green.shade800 : Colors.red.shade800,
-                        fontWeight: FontWeight.w500,
+                  if (_deviceInfo != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12.0),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(6.0),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Device Information',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade800,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (_deviceInfo!['iOSVersion'] != null)
+                            _buildInfoRow('iOS Version', _deviceInfo!['iOSVersion']),
+                          if (_deviceInfo!['deviceModel'] != null)
+                            _buildInfoRow('Device Model', _deviceInfo!['deviceModel']),
+                          _buildInfoRow('Framework Available', _deviceInfo!['frameworkAvailable'] == true ? '✅ Yes' : '❌ No'),
+                          _buildInfoRow('LiDAR Sensor', _deviceInfo!['hasLiDAR'] == true ? '✅ Yes' : '❌ No'),
+                          _buildInfoRow('RoomPlan Support', _deviceInfo!['isSupported'] == true ? '✅ Yes' : '❌ No'),
+                          if (_deviceInfo!['error'] != null)
+                            _buildInfoRow('Error', _deviceInfo!['error'], isError: true),
+                        ],
                       ),
                     ),
-                  ),
+                  ],
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage!,
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -574,8 +574,11 @@ class RoomScanViewController: UIViewController {
 
 @available(iOS 16.0, *)
 extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
+  
+  // MARK: - RoomCaptureViewDelegate Methods
+  
   func captureView(_ view: RoomCaptureView, didPresent room: CapturedRoom, error: Error?) {
-    print("DEBUG: Room capture completed!")
+    print("DEBUG: 🎉 Room capture completed! This means you successfully scanned a room!")
     
     if let error = error {
       print("DEBUG: Room capture error: \(error)")
@@ -586,6 +589,7 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
     }
     
     print("DEBUG: Room captured successfully, exporting to USDZ...")
+    print("DEBUG: Room has \(room.objects.count) objects")
     
     // Save to USDZ file
     let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -617,6 +621,36 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
       dismiss(animated: true) {
         self.onScanComplete?(false, "Failed to save scan: \(error.localizedDescription)", nil)
       }
+    }
+  }
+  
+  // MARK: - RoomCaptureSessionDelegate Methods
+  
+  func captureSession(_ session: RoomCaptureSession, didAdd room: CapturedRoom) {
+    print("DEBUG: 📍 Room scanning started - objects: \(room.objects.count)")
+  }
+  
+  func captureSession(_ session: RoomCaptureSession, didChange room: CapturedRoom) {
+    print("DEBUG: 🔄 Room scan updated - objects: \(room.objects.count)")
+  }
+  
+  func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
+    print("DEBUG: ⚡ Room scan progress - objects: \(room.objects.count)")
+  }
+  
+  func captureSession(_ session: RoomCaptureSession, didRemove room: CapturedRoom) {
+    print("DEBUG: 🗑️ Room removed from session")
+  }
+  
+  func captureSession(_ session: RoomCaptureSession, didStartWith configuration: RoomCaptureSession.Configuration) {
+    print("DEBUG: 🚀 Room capture session started with configuration")
+  }
+  
+  func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
+    if let error = error {
+      print("DEBUG: ❌ Room capture session ended with error: \(error)")
+    } else {
+      print("DEBUG: ✅ Room capture session ended successfully")
     }
   }
 }

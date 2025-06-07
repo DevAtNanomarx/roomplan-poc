@@ -309,7 +309,7 @@ class SimpleRoomPlanHandler {
       return
     }
     
-    // RoomPlan is supported, start actual scanning
+        // RoomPlan is supported, start actual scanning
     print("DEBUG: Starting actual room scan...")
     
     guard #available(iOS 16.0, *) else {
@@ -323,22 +323,31 @@ class SimpleRoomPlanHandler {
     DispatchQueue.main.async {
       let roomScanViewController = RoomScanViewController()
       roomScanViewController.onScanComplete = { [weak self] success, message, filePath in
-        if success {
-          result(["success": true, "message": message, "filePath": filePath ?? ""])
-        } else {
-          result(FlutterError(code: "SCAN_FAILED", message: message, details: nil))
+        DispatchQueue.main.async {
+          if success {
+            let resultMap: [String: Any] = [
+              "success": true, 
+              "message": message, 
+              "filePath": filePath ?? "",
+              "scanComplete": true
+            ]
+            result(resultMap)
+          } else {
+            result(FlutterError(code: "SCAN_FAILED", message: message, details: nil))
+          }
         }
       }
       
       if let viewController = UIApplication.shared.keyWindow?.rootViewController {
         viewController.present(roomScanViewController, animated: true)
-        result(["success": true, "message": "Room scan started", "scanning": true])
+        // Don't call result here - wait for the scan to complete
+        print("DEBUG: Room scan view controller presented, waiting for completion...")
       } else {
         result(FlutterError(code: "NO_VIEW_CONTROLLER", 
                           message: "Could not find view controller to present scanner", 
-                        details: nil))
+                          details: nil))
+      }
     }
-  }
     #else
     result(FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
                       message: "RoomPlan framework not available", 

@@ -112,19 +112,29 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
     }
   }
 
-  Future<void> _startRoomScan() async {
+    Future<void> _startRoomScan() async {
     if (_isScanning) return;
-        
-        setState(() {
+    
+    setState(() {
       _isScanning = true;
-        });
+    });
 
     try {
+      // Show initial scanning message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Starting room scan...'),
+          backgroundColor: Colors.blue,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
       final result = await platform.invokeMethod('startRoomScan');
       
       if (result is Map) {
         final message = result['message'] ?? 'Room scan completed';
         final success = result['success'] ?? false;
+        final scanComplete = result['scanComplete'] ?? false;
         
         // Show result message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -135,8 +145,9 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
           ),
         );
         
-        // If a file was saved, reload the list
-        if (result['filePath'] != null && success) {
+        // If scan was completed and file was saved, reload the list
+        if (scanComplete && result['filePath'] != null && success) {
+          print('DEBUG: Scan completed, reloading USDZ files list...');
           await _loadSavedUSDZFiles();
           
           // Show additional success info
@@ -153,8 +164,16 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                 },
               ),
             ),
-        );
+          );
         }
+      } else {
+        // Handle unexpected result format
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unexpected response from scan: $result'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       }
     } on PlatformException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

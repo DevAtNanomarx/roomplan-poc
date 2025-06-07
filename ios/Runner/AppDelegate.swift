@@ -247,7 +247,7 @@ class SimpleRoomPlanHandler {
 }
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, UIDocumentPickerDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -269,7 +269,7 @@ class SimpleRoomPlanHandler {
     private func handleMethodCall(call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "isRoomPlanSupported":
-      checkRoomPlanSupport(result: result)
+      checkRoomPlanSupported(result: result)
     case "startRoomScan":
       startRoomScan(result: result)
     case "getSavedUSDZFiles":
@@ -278,12 +278,14 @@ class SimpleRoomPlanHandler {
       openUSDZFile(call: call, result: result)
     case "deleteUSDZFile":
       deleteUSDZFile(call: call, result: result)
+    case "importUSDZFile":
+      importUSDZFile(result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
   }
   
-  private func checkRoomPlanSupport(result: @escaping FlutterResult) {
+  private func checkRoomPlanSupported(result: @escaping FlutterResult) {
     let deviceInfo = SimpleRoomPlanHandler.checkRoomPlanSupport()
     
     do {
@@ -467,6 +469,114 @@ class SimpleRoomPlanHandler {
                         details: nil))
     }
   }
+  
+  private func importUSDZFile(result: @escaping FlutterResult) {
+    DispatchQueue.main.async {
+      let documentPicker = UIDocumentPickerViewController(documentTypes: ["com.pixar.universal-scene-description-mobile"], in: .import)
+      documentPicker.delegate = self
+      documentPicker.modalPresentationStyle = .formSheet
+      documentPicker.allowsMultipleSelection = false
+      
+      // Store the result callback for later use
+      self.importResultCallback = result
+      
+      if let viewController = UIApplication.shared.keyWindow?.rootViewController {
+        viewController.present(documentPicker, animated: true) {
+          print("DEBUG: USDZ import document picker presented")
+        }
+      } else {
+        result(FlutterError(code: "NO_VIEW_CONTROLLER", 
+                          message: "Could not find view controller to present document picker", 
+                          details: nil))
+      }
+    }
+  }
+  
+  // Store the import result callback
+  private var importResultCallback: FlutterResult?
+}
+
+// MARK: - AppDelegate UIDocumentPickerDelegate
+
+extension AppDelegate {
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    print("DEBUG: 📁 AppDelegate document picker completed with URLs: \(urls)")
+    
+    guard let importResult = importResultCallback else {
+      print("DEBUG: No import result callback stored")
+      return
+    }
+    
+    guard let sourceURL = urls.first else {
+      print("DEBUG: ❌ No URL returned from import document picker")
+      importResult(FlutterError(code: "NO_FILE_SELECTED", 
+                              message: "No file was selected for import", 
+                              details: nil))
+      importResultCallback = nil
+      return
+    }
+    
+    // Check if it's a USDZ file
+    guard sourceURL.pathExtension.lowercased() == "usdz" else {
+      print("DEBUG: ❌ Selected file is not a USDZ file: \(sourceURL.pathExtension)")
+      importResult(FlutterError(code: "INVALID_FILE_TYPE", 
+                              message: "Please select a USDZ file", 
+                              details: nil))
+      importResultCallback = nil
+      return
+    }
+    
+    // Copy the file to our RoomScans directory
+    let usdzDirectory = getUSDZDirectory()
+    let fileName = sourceURL.lastPathComponent
+    let destinationURL = usdzDirectory.appendingPathComponent(fileName)
+    
+    // If file already exists, add timestamp to make it unique
+    var finalDestinationURL = destinationURL
+    if FileManager.default.fileExists(atPath: destinationURL.path) {
+      let timestamp = Int(Date().timeIntervalSince1970)
+      let nameWithoutExtension = (fileName as NSString).deletingPathExtension
+      let fileExtension = (fileName as NSString).pathExtension
+      let uniqueFileName = "\(nameWithoutExtension)_\(timestamp).\(fileExtension)"
+      finalDestinationURL = usdzDirectory.appendingPathComponent(uniqueFileName)
+    }
+    
+    do {
+      // Get access to the security-scoped resource
+      guard sourceURL.startAccessingSecurityScopedResource() else {
+        throw NSError(domain: "FileAccess", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not access selected file"])
+      }
+      defer { sourceURL.stopAccessingSecurityScopedResource() }
+      
+      // Copy the file
+      try FileManager.default.copyItem(at: sourceURL, to: finalDestinationURL)
+      print("DEBUG: ✅ USDZ file imported successfully to: \(finalDestinationURL.path)")
+      
+      let result: [String: Any] = [
+        "success": true,
+        "fileName": finalDestinationURL.lastPathComponent,
+        "filePath": finalDestinationURL.path,
+        "message": "USDZ file imported successfully"
+      ]
+      
+      importResult(result)
+    } catch {
+      print("DEBUG: ❌ Failed to import USDZ file: \(error)")
+      importResult(FlutterError(code: "IMPORT_FAILED", 
+                              message: "Failed to import USDZ file: \(error.localizedDescription)", 
+                              details: nil))
+    }
+    
+    importResultCallback = nil
+  }
+  
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    print("DEBUG: 📁 AppDelegate document picker was cancelled")
+    importResultCallback?(FlutterError(code: "USER_CANCELLED", 
+                                     message: "File import was cancelled by user", 
+                                     details: nil))
+    importResultCallback = nil
+  }
 }
 
 // MARK: - Room Scanning View Controller
@@ -586,12 +696,12 @@ class RoomScanViewController: UIViewController {
     
     // Update UI for preview mode
     view.subviews.forEach { $0.removeFromSuperview() }
-    view.backgroundColor = .black
+    view.backgroundColor = UIColor.systemBackground
     
     // Add preview label
     let previewLabel = UILabel()
     previewLabel.text = "Room Scan Complete"
-    previewLabel.textColor = .white
+    previewLabel.textColor = UIColor.label
     previewLabel.font = UIFont.boldSystemFont(ofSize: 24)
     previewLabel.textAlignment = .center
     view.addSubview(previewLabel)
@@ -604,7 +714,7 @@ class RoomScanViewController: UIViewController {
     // Add object count label
     let objectsLabel = UILabel()
     objectsLabel.text = "Found \(room.objects.count) objects"
-    objectsLabel.textColor = .lightGray
+    objectsLabel.textColor = UIColor.secondaryLabel
     objectsLabel.font = UIFont.systemFont(ofSize: 18)
     objectsLabel.textAlignment = .center
     view.addSubview(objectsLabel)
@@ -617,9 +727,9 @@ class RoomScanViewController: UIViewController {
     // Add objects list
     let objectsListLabel = UILabel()
     objectsListLabel.numberOfLines = 0
-    objectsListLabel.textColor = .white
+    objectsListLabel.textColor = UIColor.label
     objectsListLabel.font = UIFont.systemFont(ofSize: 14)
-    objectsListLabel.textAlignment = .center
+    objectsListLabel.textAlignment = .left
     
     var objectsList = ""
     for (index, object) in room.objects.enumerated() {
@@ -630,20 +740,37 @@ class RoomScanViewController: UIViewController {
     }
     
     objectsListLabel.text = objectsList.isEmpty ? "No objects detected" : objectsList
-    view.addSubview(objectsListLabel)
+    
+    // Add scroll view for objects list
+    let scrollView = UIScrollView()
+    scrollView.backgroundColor = UIColor.secondarySystemBackground
+    scrollView.layer.cornerRadius = 8
+    view.addSubview(scrollView)
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    
+    scrollView.addSubview(objectsListLabel)
     objectsListLabel.translatesAutoresizingMaskIntoConstraints = false
+    
     NSLayoutConstraint.activate([
-      objectsListLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      objectsListLabel.topAnchor.constraint(equalTo: objectsLabel.bottomAnchor, constant: 20),
-      objectsListLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-      objectsListLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+      // Scroll view constraints
+      scrollView.topAnchor.constraint(equalTo: objectsLabel.bottomAnchor, constant: 20),
+      scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+      scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+      scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -80),
+      
+      // Objects list constraints
+      objectsListLabel.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 16),
+      objectsListLabel.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 16),
+      objectsListLabel.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -16),
+      objectsListLabel.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: -16),
+      objectsListLabel.widthAnchor.constraint(equalTo: scrollView.widthAnchor, constant: -32)
     ])
     
     // Add Cancel button
     let cancelButton = UIButton(type: .system)
     cancelButton.setTitle("Cancel", for: .normal)
     cancelButton.setTitleColor(.white, for: .normal)
-    cancelButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+    cancelButton.backgroundColor = UIColor.systemRed
     cancelButton.layer.cornerRadius = 8
     cancelButton.addTarget(self, action: #selector(cancelPreview), for: .touchUpInside)
     
@@ -660,7 +787,7 @@ class RoomScanViewController: UIViewController {
     let saveButton = UIButton(type: .system)
     saveButton.setTitle("Save", for: .normal)
     saveButton.setTitleColor(.white, for: .normal)
-    saveButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+    saveButton.backgroundColor = UIColor.systemBlue
     saveButton.layer.cornerRadius = 8
     saveButton.addTarget(self, action: #selector(saveToFile), for: .touchUpInside)
     
@@ -685,13 +812,34 @@ class RoomScanViewController: UIViewController {
   }
   
   @objc private func saveToFile() {
-    guard let room = latestCapturedRoom else {
+    // First check if we have raw room data to process
+    if let roomData = latestCapturedRoomData {
+      print("DEBUG: Processing room data for saving...")
+      // Process the captured room data using RoomBuilder
+      Task {
+        do {
+          let roomBuilder = RoomBuilder(options: [.beautifyObjects])
+          let finalRoom = try await roomBuilder.capturedRoom(from: roomData)
+          await MainActor.run {
+            print("DEBUG: Room processing complete, showing save dialog...")
+            self.showFileSaveDialog(for: finalRoom)
+          }
+        } catch {
+          print("DEBUG: ❌ Failed to process room data: \(error)")
+          await MainActor.run {
+            self.dismiss(animated: true) {
+              self.onScanComplete?(false, "Failed to process scan: \(error.localizedDescription)", nil)
+            }
+          }
+        }
+      }
+    } else if let room = latestCapturedRoom {
+      print("DEBUG: Using existing room data for saving...")
+      showFileSaveDialog(for: room)
+    } else {
       print("DEBUG: No room data to save")
       return
     }
-    
-    print("DEBUG: Showing file save dialog...")
-    showFileSaveDialog(for: room)
   }
   
   private func showFileSaveDialog(for room: CapturedRoom) {
@@ -761,6 +909,7 @@ class RoomScanViewController: UIViewController {
   
   // Store the most recent room data
   private var latestCapturedRoom: CapturedRoom?
+  private var latestCapturedRoomData: CapturedRoomData?
 }
 
 // MARK: - RoomCaptureViewDelegate & RoomCaptureSessionDelegate
@@ -822,23 +971,9 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
       }
     } else {
       print("DEBUG: ✅ Room capture session ended successfully")
-      // Process the captured room data using RoomBuilder
-      Task {
-        do {
-          let roomBuilder = RoomBuilder(options: [.beautifyObjects])
-          let finalRoom = try await roomBuilder.capturedRoom(from: data)
-          await MainActor.run {
-            self.processCapturedRoom(finalRoom)
-          }
-        } catch {
-          print("DEBUG: ❌ Failed to process room data: \(error)")
-          await MainActor.run {
-            self.dismiss(animated: true) {
-              self.onScanComplete?(false, "Failed to process scan: \(error.localizedDescription)", nil)
-            }
-          }
-        }
-      }
+      // Don't auto-process here - let the user decide in preview
+      // Store the room data for later processing when user chooses to save
+      self.latestCapturedRoomData = data
     }
   }
   

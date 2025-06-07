@@ -211,6 +211,71 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
     }
   }
 
+  Future<void> _importUSDZFile() async {
+    try {
+      final result = await platform.invokeMethod('importUSDZFile');
+      
+      if (result is Map && result['success'] == true) {
+        final fileName = result['fileName'] as String?;
+        final message = result['message'] as String? ?? 'File imported successfully';
+        
+        // Reload the files list
+        await _loadSavedUSDZFiles();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $message'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        
+        // Show additional info about the imported file
+        if (fileName != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📁 Imported: $fileName\nTap to view in AR!'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'VIEW',
+                textColor: Colors.white,
+                onPressed: () => _openUSDZFile(fileName),
+              ),
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Import failed: ${result['message'] ?? 'Unknown error'}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } on PlatformException catch (e) {
+      if (e.code == 'USER_CANCELLED') {
+        // Don't show error for user cancellation
+        return;
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Import Error: ${e.message}'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unexpected error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Widget _buildStatusCard(String title, bool? status, {String? subtitle, IconData? icon}) {
     Color cardColor;
     Color textColor;
@@ -519,11 +584,27 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                     const SizedBox(height: 24),
 
                     // Saved USDZ Files Section
-                    Text(
-                      'Saved Room Scans',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Saved Room Scans',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _importUSDZFile,
+                          icon: const Icon(Icons.upload_file, size: 18),
+                          label: const Text('Import USDZ'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            textStyle: const TextStyle(fontSize: 14),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
 
@@ -546,7 +627,7 @@ class _DeviceCapabilityDashboardState extends State<DeviceCapabilityDashboard> {
                               ),
                               SizedBox(height: 4),
                               Text(
-                                'Start your first room scan to see it here',
+                                'Start a room scan or import a USDZ file',
                                 style: TextStyle(fontSize: 14, color: Colors.grey),
                               ),
                             ],

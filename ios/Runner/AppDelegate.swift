@@ -577,6 +577,12 @@ extension RoomScanViewController: RoomCaptureViewDelegate, RoomCaptureSessionDel
   
   // MARK: - RoomCaptureViewDelegate Methods
   
+  func captureView(_ view: RoomCaptureView, shouldPresent room: CapturedRoom) -> Bool {
+    print("DEBUG: 🤔 shouldPresent called - room has \(room.objects.count) objects")
+    // Return true to indicate we want to handle the scan results ourselves
+    return true
+  }
+  
   func captureView(_ view: RoomCaptureView, didPresent room: CapturedRoom, error: Error?) {
     print("DEBUG: 🎉 Room capture completed! This means you successfully scanned a room!")
     

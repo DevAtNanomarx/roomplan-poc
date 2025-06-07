@@ -61,8 +61,8 @@ class SimpleRoomPlanHandler {
         result["debugInfo"] = "RoomPlan framework imported successfully"
         
         // Use runtime reflection to check RoomPlan support
-        if let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") {
-            if let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool {
+        if let roomCaptureSessionClass = NSClassFromString("RoomCaptureSession") {
+            if let isSupported = roomCaptureSessionClass.value(forKey: "isSupported") as? Bool {
                 result["isSupported"] = isSupported
                 
                 if isSupported {
@@ -76,8 +76,8 @@ class SimpleRoomPlanHandler {
                 result["debugInfo"] = "KVC failed to get isSupported property"
             }
         } else {
-            result["error"] = "RoomCaptureController class not found"
-            result["debugInfo"] = "NSClassFromString failed for RoomCaptureController"
+            result["error"] = "RoomCaptureSession class not found"
+            result["debugInfo"] = "NSClassFromString failed for RoomCaptureSession"
         }
         #else
         result["error"] = "RoomPlan framework not available at compile time"
@@ -95,13 +95,13 @@ class SimpleRoomPlanHandler {
         }
         
         #if canImport(RoomPlan)
-        guard let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") else {
+        guard let roomCaptureSessionClass = NSClassFromString("RoomCaptureSession") else {
             return FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
                               message: "RoomPlan framework is not available on this device", 
                               details: nil)
         }
         
-        guard let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool,
+        guard let isSupported = roomCaptureSessionClass.value(forKey: "isSupported") as? Bool,
               isSupported else {
             return FlutterError(code: "DEVICE_NOT_SUPPORTED", 
                               message: "RoomPlan is not supported on this device. Requires LiDAR sensor.", 

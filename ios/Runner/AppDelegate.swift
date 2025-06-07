@@ -51,8 +51,48 @@ import ARKit
   
   private func checkRoomPlanSupport(result: @escaping FlutterResult) {
     if #available(iOS 16.0, *) {
-      #if canImport(RoomPlan)
-      let isSupported = RoomCaptureController.isSupported
+      // Use runtime reflection to avoid compilation issues in build environments without RoomPlan
+      guard let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") else {
+        let deviceInfo = [
+          "isSupported": false,
+          "iOSVersion": UIDevice.current.systemVersion,
+          "deviceModel": UIDevice.current.model,
+          "hasLiDAR": false,
+          "frameworkAvailable": false,
+          "error": "RoomPlan framework not available at runtime"
+        ] as [String: Any]
+        
+        do {
+          let jsonData = try JSONSerialization.data(withJSONObject: deviceInfo, options: [])
+          let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+          result(jsonString)
+        } catch {
+          result("{\"isSupported\": false, \"error\": \"RoomPlan framework not available\"}")
+        }
+        return
+      }
+      
+      // Use KVC to safely call isSupported
+      guard let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool else {
+        let deviceInfo = [
+          "isSupported": false,
+          "iOSVersion": UIDevice.current.systemVersion,
+          "deviceModel": UIDevice.current.model,
+          "hasLiDAR": false,
+          "frameworkAvailable": true,
+          "error": "Could not determine RoomPlan support"
+        ] as [String: Any]
+        
+        do {
+          let jsonData = try JSONSerialization.data(withJSONObject: deviceInfo, options: [])
+          let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+          result(jsonString)
+        } catch {
+          result("{\"isSupported\": false, \"error\": \"Could not determine RoomPlan support\"}")
+        }
+        return
+      }
+      
       let deviceInfo = [
         "isSupported": isSupported,
         "iOSVersion": UIDevice.current.systemVersion,
@@ -68,24 +108,6 @@ import ARKit
       } catch {
         result("{\"isSupported\": false, \"error\": \"JSON serialization failed\"}")
       }
-      #else
-      let deviceInfo = [
-        "isSupported": false,
-        "iOSVersion": UIDevice.current.systemVersion,
-        "deviceModel": UIDevice.current.model,
-        "hasLiDAR": false,
-        "frameworkAvailable": false,
-        "error": "RoomPlan framework not available"
-      ] as [String: Any]
-      
-      do {
-        let jsonData = try JSONSerialization.data(withJSONObject: deviceInfo, options: [])
-        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-        result(jsonString)
-      } catch {
-        result("{\"isSupported\": false, \"error\": \"RoomPlan framework not available\"}")
-      }
-      #endif
     } else {
       let deviceInfo = [
         "isSupported": false,
@@ -114,79 +136,27 @@ import ARKit
       return
     }
     
-    #if canImport(RoomPlan)
-    if #available(iOS 16.0, *) {
-      guard RoomCaptureController.isSupported else {
-        result(FlutterError(code: "DEVICE_NOT_SUPPORTED", 
-                          message: "RoomPlan is not supported on this device. Requires LiDAR sensor.", 
-                          details: nil))
-        return
-      }
-      
-      // For now, show a demo alert since we're having compilation issues
-      DispatchQueue.main.async {
-        let alert = UIAlertController(title: "🎉 RoomPlan Detected!", 
-                                    message: "RoomPlan is available and supported on this device!\n\nDevice: \(UIDevice.current.model)\niOS: \(UIDevice.current.systemVersion)\nLiDAR: ✅ Detected\n\nFull scanning implementation coming soon!", 
-                                    preferredStyle: .alert)
-        
-        alert.addAction(UIAlertAction(title: "Start Demo Scan", style: .default) { _ in
-          // Return demo data to show the flow works
-          let demoRoomData = """
-          {
-              "dimensions": {
-                  "width": 4.2,
-                  "height": 2.8,
-                  "length": 3.6
-              },
-              "area": 15.12,
-              "volume": 42.34,
-              "surfaces": [
-                  {
-                      "id": 0,
-                      "category": "wall",
-                      "dimensions": { "width": 4.2, "height": 2.8 },
-                      "area": 11.76
-                  }
-              ],
-              "objects": [
-                  {
-                      "id": 0,
-                      "category": "table",
-                      "dimensions": { "width": 1.2, "height": 0.75, "length": 0.8 },
-                      "volume": 0.72
-                  }
-              ],
-              "summary": {
-                  "totalSurfaces": 4,
-                  "totalObjects": 2,
-                  "roomType": "living_room",
-                  "scanQuality": "high"
-              },
-              "scanTimestamp": \(Int(Date().timeIntervalSince1970))
-          }
-          """
-          
-          self.saveRoomData(demoRoomData, result: result)
-        })
-        
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-          result(FlutterError(code: "SCAN_CANCELLED", 
-                            message: "Room scan was cancelled by user", 
-                            details: nil))
-        })
-        
-        controller.present(alert, animated: true)
-      }
-    } else {
-      result(FlutterError(code: "UNSUPPORTED_IOS_VERSION", 
-                        message: "RoomPlan requires iOS 16.0 or later", 
+    // Use runtime reflection to check RoomPlan support safely
+    guard let roomCaptureControllerClass = NSClassFromString("RoomCaptureController") else {
+      result(FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
+                        message: "RoomPlan framework is not available on this device", 
                         details: nil))
+      return
     }
-    #else
-    result(FlutterError(code: "ROOMPLAN_NOT_AVAILABLE", 
-                      message: "RoomPlan framework is not available on this device", 
+    
+    // Use KVC to safely call isSupported
+    guard let isSupported = roomCaptureControllerClass.value(forKey: "isSupported") as? Bool,
+          isSupported else {
+      result(FlutterError(code: "DEVICE_NOT_SUPPORTED", 
+                        message: "RoomPlan is not supported on this device. Requires LiDAR sensor.", 
+                        details: nil))
+      return
+    }
+    
+    // RoomPlan is supported - for now return an error indicating this feature is under development
+    result(FlutterError(code: "FEATURE_NOT_IMPLEMENTED", 
+                      message: "RoomPlan scanning is detected and supported on this device. Full implementation is in development.", 
                       details: nil))
-    #endif
   }
   
   private func saveRoomData(_ roomData: String, result: @escaping FlutterResult) {
